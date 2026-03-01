@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ranking de Levantadas - Sucesso</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        .hubspot-orange { color: #ff7a59; }
+        .bg-hubspot { background-color: #ff7a59; }
+        .bg-hubspot:hover { background-color: #e56a4d; }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        textarea::-webkit-scrollbar {
+            width: 8px;
+        }
+        textarea::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-results { animation: fadeIn 0.4s ease-out forwards; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold hubspot-orange mb-2">📊 Leitor de Levantadas</h1>
+            <p class="text-slate-600">Equipe Sucesso • Analisador de Dados HubSpot</p>
+        </header>
+
+        <main class="space-y-6">
+            <!-- Input Area -->
+            <div class="card p-6">
+                <label for="inputData" class="block text-sm font-semibold text-slate-700 mb-2">Cole o texto bruto do HubSpot abaixo:</label>
+                <textarea 
+                    id="inputData" 
+                    class="w-full h-48 p-4 border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none transition-all text-sm font-mono bg-slate-50"
+                    placeholder="Ex: Negócio criado! Nome do Contato... Sucesso... Nome do CS... Exibir contato na HubSpot"
+                ></textarea>
+                
+                <div class="grid grid-cols-2 gap-4 mt-4">
+                    <button onclick="processarDados()" class="bg-hubspot text-white font-bold py-3 px-6 rounded-lg shadow-md transition-all active:scale-95 hover:shadow-lg">
+                        Processar Dados
+                    </button>
+                    <button onclick="limparTudo()" class="bg-slate-200 text-slate-700 font-bold py-3 px-6 rounded-lg hover:bg-slate-300 transition-all">
+                        Limpar Tudo
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Display -->
+            <div id="resultsArea" class="hidden space-y-6 animate-results">
+                
+                <!-- Summary Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="card p-6 border-t-4 border-green-500">
+                        <h3 class="text-slate-500 text-xs uppercase font-bold tracking-wider mb-1">Total de Levantadas</h3>
+                        <div id="totalSucesso" class="text-3xl font-bold text-slate-800">0</div>
+                    </div>
+                    <div class="card p-6 border-t-4 border-orange-500">
+                        <h3 class="text-slate-500 text-xs uppercase font-bold tracking-wider mb-1">Total de CSs</h3>
+                        <div id="totalCS" class="text-3xl font-bold text-slate-800">0</div>
+                    </div>
+                    <div class="card p-6 border-t-4 border-red-500">
+                        <h3 class="text-slate-500 text-xs uppercase font-bold tracking-wider mb-1">Sem CS Atribuído</h3>
+                        <div id="totalAlertas" class="text-3xl font-bold text-slate-800">0</div>
+                    </div>
+                </div>
+
+                <!-- Ranking Card -->
+                <div class="card overflow-hidden">
+                    <div class="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center">
+                        <h2 class="font-bold text-slate-700 flex items-center gap-2">
+                            <span>🏆 Ranking por CS</span>
+                        </h2>
+                        <button onclick="copiarRanking(event)" class="text-xs font-bold bg-white border border-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100 transition-all shadow-sm flex items-center gap-2 text-slate-700">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                            Copiar Ranking
+                        </button>
+                    </div>
+                    <div class="p-0">
+                        <ul id="rankingList" class="divide-y divide-slate-100 text-slate-700">
+                            <!-- JS Inject -->
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Warnings Card -->
+                <div id="alertCard" class="card overflow-hidden border border-red-100">
+                    <div class="bg-red-50 border-b border-red-100 p-4 flex justify-between items-center">
+                        <h2 class="font-bold text-red-700 flex items-center gap-2">
+                            <span>⚠️ Negócios SEM CS Atribuído</span>
+                        </h2>
+                        <button id="btnCopiarAlertas" onclick="copiarAlertas(event)" class="hidden text-xs font-bold bg-white border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50 transition-all shadow-sm flex items-center gap-2 text-red-700">
+                            Copiar Alertas
+                        </button>
+                    </div>
+                    <div class="p-4 bg-white">
+                        <ul id="semCsList" class="space-y-2 text-sm text-red-600">
+                            <!-- JS Inject -->
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function limparTudo() {
+            document.getElementById('inputData').value = '';
+            document.getElementById('resultsArea').classList.add('hidden');
+        }
+
+        function processarDados() {
+            const rawText = document.getElementById('inputData').value;
+            if (!rawText.trim()) return;
+
+            const blocks = rawText.split(/Exibir contato na HubSpot|Atividade da linha de tempo/g);
+
+            let totalSucesso = 0;
+            let csCounts = {};
+            let semCsList = [];
+
+            blocks.forEach(block => {
+                const trimmedBlock = block.trim();
+                if (!trimmedBlock) return;
+
+                if (trimmedBlock.includes('Sucesso')) {
+                    totalSucesso++;
+
+                    const lines = trimmedBlock.split('\n')
+                        .map(l => l.trim())
+                        .filter(l => l && l !== 'Sucesso');
+                    
+                    let contactName = "Desconhecido";
+                    const indexNegocio = lines.findIndex(l => l.includes('Negócio criado!'));
+                    if (indexNegocio !== -1 && lines[indexNegocio + 1]) {
+                        contactName = lines[indexNegocio + 1];
+                    } else {
+                        contactName = lines[0];
+                    }
+
+                    const csName = lines[lines.length - 1];
+                    const invalidTerms = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro', ':', '/'];
+                    const isInvalid = !csName || csName.length < 3 || invalidTerms.some(term => csName.toLowerCase().includes(term));
+
+                    if (!isInvalid) {
+                        csCounts[csName] = (csCounts[csName] || 0) + 1;
+                    } else {
+                        semCsList.push(contactName);
+                    }
+                }
+            });
+
+            const sortedCs = Object.entries(csCounts).sort((a, b) => b[1] - a[1]);
+
+            document.getElementById('totalSucesso').innerText = totalSucesso;
+            document.getElementById('totalCS').innerText = Object.keys(csCounts).length;
+            document.getElementById('totalAlertas').innerText = semCsList.length;
+
+            const rankingUl = document.getElementById('rankingList');
+            rankingUl.innerHTML = '';
+            
+            if (sortedCs.length === 0) {
+                rankingUl.innerHTML = '<li class="p-8 text-center text-slate-400">Nenhum dado de CS encontrado.</li>';
+            } else {
+                sortedCs.forEach((item, index) => {
+                    const li = document.createElement('li');
+                    li.className = "flex items-center justify-between p-4 hover:bg-slate-50 transition-colors";
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                    li.innerHTML = `
+                        <div class="flex items-center gap-3">
+                            <span class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-500">${index + 1}º</span>
+                            <span class="font-semibold">${medal} ${item[0]}</span>
+                        </div>
+                        <div class="bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-bold text-sm">
+                            ${item[1]} levantada${item[1] > 1 ? 's' : ''}
+                        </div>
+                    `;
+                    rankingUl.appendChild(li);
+                });
+            }
+
+            const semCsUl = document.getElementById('semCsList');
+            const btnAlertas = document.getElementById('btnCopiarAlertas');
+            semCsUl.innerHTML = '';
+            
+            if (semCsList.length > 0) {
+                btnAlertas.classList.remove('hidden');
+                semCsList.forEach(contato => {
+                    const li = document.createElement('li');
+                    li.className = "flex items-start gap-2 py-1";
+                    li.innerHTML = `<span class="opacity-50">•</span> <span>${contato}</span>`;
+                    semCsUl.appendChild(li);
+                });
+            } else {
+                btnAlertas.classList.add('hidden');
+                semCsUl.innerHTML = '<li class="text-green-600 font-medium text-center py-4">✨ Excelente! Todos os negócios possuem um CS atribuído.</li>';
+            }
+
+            document.getElementById('resultsArea').classList.remove('hidden');
+            window.scrollTo({ top: document.getElementById('resultsArea').offsetTop - 20, behavior: 'smooth' });
+        }
+
+        function copiarTexto(texto, botao) {
+            const el = document.createElement('textarea');
+            el.value = texto;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+
+            const originalContent = botao.innerHTML;
+            botao.innerHTML = "Copiado! ✅";
+            botao.classList.add('bg-green-50', 'text-green-700', 'border-green-200');
+            
+            setTimeout(() => {
+                botao.innerHTML = originalContent;
+                botao.classList.remove('bg-green-50', 'text-green-700', 'border-green-200');
+            }, 2000);
+        }
+
+        function copiarRanking(event) {
+            const listItems = document.querySelectorAll('#rankingList li');
+            if (listItems.length === 0) return;
+
+            let text = "*🏆 RANKING DE LEVANTADAS - SUCESSO*\n\n";
+            listItems.forEach((li, index) => {
+                const name = li.querySelector('.font-semibold').innerText;
+                const count = li.querySelector('.bg-orange-100').innerText;
+                text += `${index + 1}º ${name}: ${count}\n`;
+            });
+
+            const total = document.getElementById('totalSucesso').innerText;
+            text += `\n🚀 *Total da Equipe: ${total} levantadas*`;
+
+            copiarTexto(text, event.currentTarget);
+        }
+
+        function copiarAlertas(event) {
+            const items = document.querySelectorAll('#semCsList li span:last-child');
+            if (items.length === 0) return;
+
+            let text = "*⚠️ NEGÓCIOS SEM CS ATRIBUÍDO*\n\n";
+            items.forEach(item => {
+                text += `• ${item.innerText}\n`;
+            });
+            
+            text += "\n_Por favor, atribuam os CSs nestes negócios no HubSpot._";
+
+            copiarTexto(text, event.currentTarget);
+        }
+    </script>
+</body>
+</html>
