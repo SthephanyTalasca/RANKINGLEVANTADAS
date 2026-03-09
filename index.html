@@ -23,22 +23,39 @@
             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
         }
 
-        textarea::-webkit-scrollbar {
-            width: 8px;
-        }
-        textarea::-webkit-scrollbar-track {
-            background: #f1f1f1;
-        }
-        textarea::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
+        textarea::-webkit-scrollbar { width: 8px; }
+        textarea::-webkit-scrollbar-track { background: #f1f1f1; }
+        textarea::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
         .animate-results { animation: fadeIn 0.4s ease-out forwards; }
+
+        #csAutocompleteList {
+            position: absolute;
+            z-index: 50;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgb(0 0 0 / 0.1);
+            max-height: 200px;
+            overflow-y: auto;
+            width: 100%;
+            top: 100%;
+            left: 0;
+        }
+        #csAutocompleteList li {
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            color: #334155;
+        }
+        #csAutocompleteList li:hover, #csAutocompleteList li.active {
+            background-color: #fff7f5;
+            color: #ff7a59;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -50,6 +67,7 @@
         </header>
 
         <main class="space-y-6">
+
             <!-- Input Area -->
             <div class="card p-6">
                 <label for="inputData" class="block text-sm font-semibold text-slate-700 mb-2">Cole o texto bruto do HubSpot abaixo:</label>
@@ -58,7 +76,6 @@
                     class="w-full h-48 p-4 border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none transition-all text-sm font-mono bg-slate-50"
                     placeholder="Ex: Negócio criado! Nome do Contato... Sucesso... Nome do CS... Exibir contato na HubSpot"
                 ></textarea>
-                
                 <div class="grid grid-cols-2 gap-4 mt-4">
                     <button onclick="processarDados()" class="bg-hubspot text-white font-bold py-3 px-6 rounded-lg shadow-md transition-all active:scale-95 hover:shadow-lg">
                         Processar Dados
@@ -69,10 +86,44 @@
                 </div>
             </div>
 
+            <!-- Key Account Box -->
+            <div class="card p-6 border-l-4 border-purple-400">
+                <h2 class="font-bold text-slate-700 mb-1 flex items-center gap-2">
+                    ⭐ Adicionar Key Account
+                </h2>
+                <p class="text-xs text-slate-500 mb-4">Cada key account adicionada conta como +1 levantada para o CS selecionado.</p>
+
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <input 
+                        type="number"
+                        id="keyAccountName"
+                        placeholder="Nº de levantadas"
+                        min="1"
+                        class="w-36 p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-300 focus:border-transparent outline-none text-sm bg-slate-50"
+                    />
+                    <div class="relative flex-1">
+                        <input 
+                            type="text"
+                            id="keyAccountCS"
+                            placeholder="Nome do CS (digite ou selecione)"
+                            autocomplete="off"
+                            oninput="mostrarSugestoes()"
+                            onkeydown="navegarSugestoes(event)"
+                            class="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-300 focus:border-transparent outline-none text-sm bg-slate-50"
+                        />
+                        <ul id="csAutocompleteList" class="hidden"></ul>
+                    </div>
+                    <button onclick="adicionarKeyAccount()" class="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-5 rounded-lg transition-all active:scale-95 whitespace-nowrap text-sm">
+                        + Adicionar
+                    </button>
+                </div>
+
+                <ul id="keyAccountList" class="mt-4 space-y-2 text-sm"></ul>
+            </div>
+
             <!-- Results Display -->
             <div id="resultsArea" class="hidden space-y-6 animate-results">
                 
-                <!-- Summary Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="card p-6 border-t-4 border-green-500">
                         <h3 class="text-slate-500 text-xs uppercase font-bold tracking-wider mb-1">Total de Levantadas</h3>
@@ -88,7 +139,6 @@
                     </div>
                 </div>
 
-                <!-- Ranking Card -->
                 <div class="card overflow-hidden">
                     <div class="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center">
                         <h2 class="font-bold text-slate-700 flex items-center gap-2">
@@ -100,13 +150,10 @@
                         </button>
                     </div>
                     <div class="p-0">
-                        <ul id="rankingList" class="divide-y divide-slate-100 text-slate-700">
-                            <!-- JS Inject -->
-                        </ul>
+                        <ul id="rankingList" class="divide-y divide-slate-100 text-slate-700"></ul>
                     </div>
                 </div>
 
-                <!-- Warnings Card -->
                 <div id="alertCard" class="card overflow-hidden border border-red-100">
                     <div class="bg-red-50 border-b border-red-100 p-4 flex justify-between items-center">
                         <h2 class="font-bold text-red-700 flex items-center gap-2">
@@ -117,9 +164,7 @@
                         </button>
                     </div>
                     <div class="p-4 bg-white">
-                        <ul id="semCsList" class="space-y-2 text-sm text-red-600">
-                            <!-- JS Inject -->
-                        </ul>
+                        <ul id="semCsList" class="space-y-2 text-sm text-red-600"></ul>
                     </div>
                 </div>
             </div>
@@ -127,11 +172,109 @@
     </div>
 
     <script>
+        // ─── Estado global ────────────────────────────────────────────────────────
+        let keyAccounts = [];      // [{ accountName, csName }]
+        let csListaAtual = [];     // nomes dos CSs do último processamento (para autocomplete)
+
+        // ─── Autocomplete ─────────────────────────────────────────────────────────
+        function mostrarSugestoes() {
+            const input = document.getElementById('keyAccountCS');
+            const lista = document.getElementById('csAutocompleteList');
+            const valor = input.value.trim().toLowerCase();
+
+            if (!valor || csListaAtual.length === 0) { lista.classList.add('hidden'); return; }
+
+            const filtrados = csListaAtual.filter(cs => cs.toLowerCase().includes(valor));
+            if (filtrados.length === 0) { lista.classList.add('hidden'); return; }
+
+            lista.innerHTML = '';
+            filtrados.forEach(cs => {
+                const li = document.createElement('li');
+                li.textContent = cs;
+                li.onclick = () => { input.value = cs; lista.classList.add('hidden'); };
+                lista.appendChild(li);
+            });
+            lista.classList.remove('hidden');
+        }
+
+        function navegarSugestoes(e) {
+            const lista = document.getElementById('csAutocompleteList');
+            const items = lista.querySelectorAll('li');
+            const ativo = lista.querySelector('li.active');
+
+            if (e.key === 'Escape') { lista.classList.add('hidden'); return; }
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (!ativo) { items[0]?.classList.add('active'); }
+                else { ativo.classList.remove('active'); (ativo.nextElementSibling || items[0]).classList.add('active'); }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (!ativo) { items[items.length - 1]?.classList.add('active'); }
+                else { ativo.classList.remove('active'); (ativo.previousElementSibling || items[items.length - 1]).classList.add('active'); }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (ativo) { document.getElementById('keyAccountCS').value = ativo.textContent; lista.classList.add('hidden'); }
+                else { adicionarKeyAccount(); }
+            }
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#keyAccountCS') && !e.target.closest('#csAutocompleteList')) {
+                document.getElementById('csAutocompleteList').classList.add('hidden');
+            }
+        });
+
+        // ─── Key Accounts ─────────────────────────────────────────────────────────
+        function adicionarKeyAccount() {
+            const quantidade = parseInt(document.getElementById('keyAccountName').value);
+            const csName = document.getElementById('keyAccountCS').value.trim();
+            if (!quantidade || quantidade < 1 || !csName) { alert('Preencha a quantidade de levantadas e o CS responsável.'); return; }
+
+            keyAccounts.push({ quantidade, csName });
+            renderizarKeyAccounts();
+            document.getElementById('keyAccountName').value = '';
+            document.getElementById('keyAccountCS').value = '';
+
+            // Atualiza ranking em tempo real se já estiver visível
+            if (!document.getElementById('resultsArea').classList.contains('hidden')) {
+                processarDados();
+            }
+        }
+
+        function removerKeyAccount(index) {
+            keyAccounts.splice(index, 1);
+            renderizarKeyAccounts();
+            if (!document.getElementById('resultsArea').classList.contains('hidden')) {
+                processarDados();
+            }
+        }
+
+        function renderizarKeyAccounts() {
+            const ul = document.getElementById('keyAccountList');
+            ul.innerHTML = '';
+            keyAccounts.forEach(({ quantidade, csName }, index) => {
+                const li = document.createElement('li');
+                li.className = "flex items-center justify-between bg-purple-50 border border-purple-100 rounded-lg px-4 py-2";
+                li.innerHTML = `
+                    <div class="flex items-center gap-2 text-purple-800 flex-wrap">
+                        <span class="text-purple-400">⭐</span>
+                        <span class="font-medium">${csName}</span>
+                        <span class="text-purple-300 text-xs">+</span>
+                        <span class="text-sm text-purple-600 font-bold">${quantidade} levantada${quantidade > 1 ? 's' : ''}</span>
+                    </div>
+                    <button onclick="removerKeyAccount(${index})" class="text-purple-300 hover:text-red-400 transition-colors text-xl leading-none font-bold ml-4">×</button>
+                `;
+                ul.appendChild(li);
+            });
+        }
+
+        // ─── Limpar ───────────────────────────────────────────────────────────────
         function limparTudo() {
             document.getElementById('inputData').value = '';
             document.getElementById('resultsArea').classList.add('hidden');
         }
 
+        // ─── Processar ────────────────────────────────────────────────────────────
         function processarDados() {
             const rawText = document.getElementById('inputData').value;
             if (!rawText.trim()) return;
@@ -139,10 +282,10 @@
             const blocks = rawText.split(/Exibir contato na HubSpot|Atividade da linha de tempo/g);
 
             let totalSucesso = 0;
-            let csCounts = {};
+            let csData = {};   // { [csName]: { count, keyAccountCount, firstIndex } }
             let semCsList = [];
 
-            blocks.forEach(block => {
+            blocks.forEach((block, blockIndex) => {
                 const trimmedBlock = block.trim();
                 if (!trimmedBlock) return;
 
@@ -152,7 +295,7 @@
                     const lines = trimmedBlock.split('\n')
                         .map(l => l.trim())
                         .filter(l => l && l !== 'Sucesso');
-                    
+
                     let contactName = "Desconhecido";
                     const indexNegocio = lines.findIndex(l => l.includes('Negócio criado!'));
                     if (indexNegocio !== -1 && lines[indexNegocio + 1]) {
@@ -161,57 +304,84 @@
                         contactName = lines[0];
                     }
 
-                    const csName = lines[lines.length - 1];
-                    const invalidTerms = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro', ':', '/'];
-                    const isInvalid = !csName || csName.length < 3 || invalidTerms.some(term => csName.toLowerCase().includes(term));
+                    const csCandidate = lines[lines.length - 1];
+                    const invalidTerms = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+                                          'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro', ':', '/'];
+                    const isFormatInvalid = !csCandidate || csCandidate.length < 3 ||
+                        invalidTerms.some(term => csCandidate.toLowerCase().includes(term));
 
-                    if (!isInvalid) {
-                        csCounts[csName] = (csCounts[csName] || 0) + 1;
-                    } else {
-                        semCsList.push(contactName);
+                    if (isFormatInvalid) { semCsList.push({ contactName }); return; }
+
+                    if (!csData[csCandidate]) {
+                        csData[csCandidate] = { count: 0, keyAccountCount: 0, firstIndex: blockIndex };
                     }
+                    csData[csCandidate].count++;
                 }
             });
 
-            const sortedCs = Object.entries(csCounts).sort((a, b) => b[1] - a[1]);
+            // ── Aplica key accounts: soma a quantidade informada para o CS ────────
+            keyAccounts.forEach(({ quantidade, csName }) => {
+                if (!csData[csName]) {
+                    csData[csName] = { count: 0, keyAccountCount: 0, firstIndex: Infinity };
+                }
+                csData[csName].count += quantidade;
+                csData[csName].keyAccountCount += quantidade;
+            });
 
-            document.getElementById('totalSucesso').innerText = totalSucesso;
-            document.getElementById('totalCS').innerText = Object.keys(csCounts).length;
+            // Atualiza lista para o autocomplete
+            csListaAtual = Object.keys(csData);
+
+            // ── Ordenação ─────────────────────────────────────────────────────────
+            const sortedCs = Object.entries(csData).sort((a, b) => {
+                if (b[1].count !== a[1].count) return b[1].count - a[1].count;
+                return a[1].firstIndex - b[1].firstIndex;
+            });
+
+            // ── Resumo ────────────────────────────────────────────────────────────
+            const totalKeyAccounts = keyAccounts.reduce((sum, ka) => sum + ka.quantidade, 0);
+            document.getElementById('totalSucesso').innerText = totalSucesso + totalKeyAccounts;
+            document.getElementById('totalCS').innerText = Object.keys(csData).length;
             document.getElementById('totalAlertas').innerText = semCsList.length;
 
+            // ── Ranking ───────────────────────────────────────────────────────────
             const rankingUl = document.getElementById('rankingList');
             rankingUl.innerHTML = '';
-            
+
             if (sortedCs.length === 0) {
                 rankingUl.innerHTML = '<li class="p-8 text-center text-slate-400">Nenhum dado de CS encontrado.</li>';
             } else {
-                sortedCs.forEach((item, index) => {
+                sortedCs.forEach(([name, data], index) => {
                     const li = document.createElement('li');
                     li.className = "flex items-center justify-between p-4 hover:bg-slate-50 transition-colors";
                     const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                    const kaBadge = data.keyAccountCount > 0
+                        ? `<span class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-semibold">⭐ ${data.keyAccountCount} key account${data.keyAccountCount > 1 ? 's' : ''}</span>`
+                        : '';
                     li.innerHTML = `
-                        <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-3 flex-wrap">
                             <span class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-500">${index + 1}º</span>
-                            <span class="font-semibold">${medal} ${item[0]}</span>
+                            <span class="font-semibold">${medal} ${name}</span>
+                            ${kaBadge}
                         </div>
-                        <div class="bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-bold text-sm">
-                            ${item[1]} levantada${item[1] > 1 ? 's' : ''}
+                        <div class="bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-bold text-sm shrink-0">
+                            ${data.count} levantada${data.count > 1 ? 's' : ''}
                         </div>
                     `;
                     rankingUl.appendChild(li);
                 });
             }
 
+            // ── Alertas ───────────────────────────────────────────────────────────
             const semCsUl = document.getElementById('semCsList');
             const btnAlertas = document.getElementById('btnCopiarAlertas');
             semCsUl.innerHTML = '';
-            
+
             if (semCsList.length > 0) {
                 btnAlertas.classList.remove('hidden');
-                semCsList.forEach(contato => {
+                semCsList.forEach(({ contactName }) => {
                     const li = document.createElement('li');
                     li.className = "flex items-start gap-2 py-1";
-                    li.innerHTML = `<span class="opacity-50">•</span> <span>${contato}</span>`;
+                    li.innerHTML = `<span class="opacity-50">•</span> <span>${contactName}</span>`;
                     semCsUl.appendChild(li);
                 });
             } else {
@@ -223,6 +393,7 @@
             window.scrollTo({ top: document.getElementById('resultsArea').offsetTop - 20, behavior: 'smooth' });
         }
 
+        // ─── Copiar helpers ───────────────────────────────────────────────────────
         function copiarTexto(texto, botao) {
             const el = document.createElement('textarea');
             el.value = texto;
@@ -234,7 +405,6 @@
             const originalContent = botao.innerHTML;
             botao.innerHTML = "Copiado! ✅";
             botao.classList.add('bg-green-50', 'text-green-700', 'border-green-200');
-            
             setTimeout(() => {
                 botao.innerHTML = originalContent;
                 botao.classList.remove('bg-green-50', 'text-green-700', 'border-green-200');
@@ -249,26 +419,26 @@
             listItems.forEach((li, index) => {
                 const name = li.querySelector('.font-semibold').innerText;
                 const count = li.querySelector('.bg-orange-100').innerText;
-                text += `${index + 1}º ${name}: ${count}\n`;
+                const kaBadge = li.querySelector('.bg-purple-100');
+                const kaText = kaBadge ? ` (${kaBadge.innerText.trim()})` : '';
+                text += `${index + 1}º ${name}: ${count}${kaText}\n`;
             });
 
             const total = document.getElementById('totalSucesso').innerText;
             text += `\n🚀 *Total da Equipe: ${total} levantadas*`;
-
             copiarTexto(text, event.currentTarget);
         }
 
         function copiarAlertas(event) {
-            const items = document.querySelectorAll('#semCsList li span:last-child');
+            const items = document.querySelectorAll('#semCsList li');
             if (items.length === 0) return;
 
             let text = "*⚠️ NEGÓCIOS SEM CS ATRIBUÍDO*\n\n";
             items.forEach(item => {
-                text += `• ${item.innerText}\n`;
+                const spans = item.querySelectorAll('span');
+                text += `• ${spans[1]?.innerText?.trim() || ''}\n`;
             });
-            
             text += "\n_Por favor, atribuam os CSs nestes negócios no HubSpot._";
-
             copiarTexto(text, event.currentTarget);
         }
     </script>
