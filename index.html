@@ -471,19 +471,31 @@
             });
         }
 
-        // ── CSs sem levantada ─────────────────────────────────────────────────
+        // ── CSs sem levantada — aparece no final do ranking ───────────────────
         const semLevCard = document.getElementById('semLevantadaCard');
-        const semLevUl = document.getElementById('semLevantadaList');
-        semLevUl.innerHTML = '';
+        semLevCard.classList.add('hidden'); // card separado não é mais necessário
+
         if (csSemLevantada.length > 0) {
-            semLevCard.classList.remove('hidden');
+            // separador
+            const sep = document.createElement('li');
+            sep.className = "px-4 py-2 bg-yellow-50 border-t border-yellow-100 text-xs font-bold text-yellow-600 uppercase tracking-wider";
+            sep.textContent = "😴 Sem levantada";
+            rankingUl.appendChild(sep);
+
             csSemLevantada.forEach(cs => {
                 const li = document.createElement('li');
-                li.innerHTML = `<span class="badge-ausente">😴 ${cs.split(' ')[0]}</span>`;
-                semLevUl.appendChild(li);
+                li.className = "flex items-center justify-between p-4 hover:bg-yellow-50 transition-colors opacity-60";
+                li.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <span class="w-7 h-7 flex items-center justify-center rounded-full bg-yellow-100 text-xs font-bold text-yellow-500">—</span>
+                        <span class="font-medium text-slate-500">${cs}</span>
+                    </div>
+                    <div class="bg-yellow-100 text-yellow-600 px-3 py-1 rounded-full font-bold text-sm shrink-0">
+                        0 levantadas
+                    </div>
+                `;
+                rankingUl.appendChild(li);
             });
-        } else {
-            semLevCard.classList.add('hidden');
         }
 
         // ── Alertas sem CS ────────────────────────────────────────────────────
