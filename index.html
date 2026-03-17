@@ -476,21 +476,21 @@
         semLevCard.classList.add('hidden'); // card separado não é mais necessário
 
         if (csSemLevantada.length > 0) {
-            // separador
+            // separador zona de risco
             const sep = document.createElement('li');
-            sep.className = "px-4 py-2 bg-yellow-50 border-t border-yellow-100 text-xs font-bold text-yellow-600 uppercase tracking-wider";
-            sep.textContent = "😴 Sem levantada";
+            sep.className = "flex items-center justify-center px-4 py-3 bg-red-600";
+            sep.innerHTML = `<span style="letter-spacing:0.18em;font-family:'Space Grotesk',sans-serif;" class="text-white text-xs font-black uppercase flex items-center gap-2">🚨 ZONA DE RISCO — SEM NENHUMA LEVANTADA 🚨</span>`;
             rankingUl.appendChild(sep);
 
             csSemLevantada.forEach(cs => {
                 const li = document.createElement('li');
-                li.className = "flex items-center justify-between p-4 hover:bg-yellow-50 transition-colors opacity-60";
+                li.className = "flex items-center justify-between p-4 bg-red-50 hover:bg-red-100 transition-colors";
                 li.innerHTML = `
                     <div class="flex items-center gap-3">
-                        <span class="w-7 h-7 flex items-center justify-center rounded-full bg-yellow-100 text-xs font-bold text-yellow-500">—</span>
-                        <span class="font-medium text-slate-500">${cs}</span>
+                        <span class="w-7 h-7 flex items-center justify-center rounded-full bg-red-200 text-xs font-bold text-red-600">!</span>
+                        <span class="font-semibold text-red-700">${cs}</span>
                     </div>
-                    <div class="bg-yellow-100 text-yellow-600 px-3 py-1 rounded-full font-bold text-sm shrink-0">
+                    <div class="bg-red-100 text-red-600 border border-red-200 px-3 py-1 rounded-full font-bold text-sm shrink-0">
                         0 levantadas
                     </div>
                 `;
