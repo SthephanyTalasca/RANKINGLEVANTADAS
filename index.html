@@ -240,20 +240,25 @@
         "Vinícius Oliveira", "William Martins", "Yuri Santos"
     ];
 
+    // Normaliza string: minúsculo + sem acento
+    function norm(s) {
+        return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+
     // Descobre quais primeiros nomes são únicos para usar como alias de busca
     const primeiroNomeContagem = {};
     CS_FIXOS_RAW.forEach(nome => {
-        const primeiro = nome.split(' ')[0];
+        const primeiro = norm(nome.split(' ')[0]);
         primeiroNomeContagem[primeiro] = (primeiroNomeContagem[primeiro] || 0) + 1;
     });
 
-    // Mapa: apelido/primeiro nome → nome completo canônico
+    // Mapa: apelido/primeiro nome normalizado → nome completo canônico
     const CS_ALIAS = {};
     CS_FIXOS_RAW.forEach(nome => {
-        CS_ALIAS[nome.toLowerCase()] = nome; // nome completo
-        const primeiro = nome.split(' ')[0];
+        CS_ALIAS[norm(nome)] = nome; // nome completo
+        const primeiro = norm(nome.split(' ')[0]);
         if (primeiroNomeContagem[primeiro] === 1) {
-            CS_ALIAS[primeiro.toLowerCase()] = nome; // primeiro nome único
+            CS_ALIAS[primeiro] = nome; // primeiro nome único
         }
     });
 
@@ -267,7 +272,7 @@
     // ─── Resolve nome: tenta casar com a lista fixa ───────────────────────────
     function resolverNomeCS(nome) {
         if (!nome) return null;
-        const chave = nome.trim().toLowerCase();
+        const chave = norm(nome.trim());
         if (CS_ALIAS[chave]) return CS_ALIAS[chave];
         // tenta match parcial (contém o primeiro nome)
         for (const [alias, canonical] of Object.entries(CS_ALIAS)) {
@@ -538,31 +543,36 @@
     function copiarRanking(event) {
         const listItems = document.querySelectorAll('#rankingList li');
         if (!listItems.length) return;
-        let text = "*🏆 RANKING DE LEVANTADAS - SUCESSO*\n\n";
-        listItems.forEach((li, index) => {
-            const name = li.querySelector('.font-semibold').innerText;
-            const count = li.querySelector('.bg-orange-100').innerText;
-            const kaBadge = li.querySelector('.bg-purple-100');
-            const kaText = kaBadge ? ` (${kaBadge.innerText.trim()})` : '';
-            text += `${index + 1}º ${name}: ${count}${kaText}\n`;
-        });
         const total = document.getElementById('totalSucesso').innerText;
         const meta = parseInt(document.getElementById('metaMes').value);
-        text += `\n🚀 *Total da Equipe: ${total} levantadas*`;
+        let text = "*🏆 RANKING DE LEVANTADAS - SUCESSO*\n";
+        text += `🚀 *Total da Equipe: ${total} levantadas*`;
         if (meta > 0) {
             const pct = Math.min(Math.round((parseInt(total) / meta) * 100), 100);
             const faltam = Math.max(meta - parseInt(total), 0);
-            text += `\n🎯 *Meta: ${meta} | ${pct}% atingido*`;
+            text += ` | 🎯 Meta: ${meta} | ${pct}% atingido`;
             if (faltam > 0) text += ` | Faltam ${faltam}`;
         }
-        const semLevItems = document.querySelectorAll('#semLevantadaList li');
-        if (semLevItems.length > 0) {
-            text += `\n\n⚠️ *Sem nenhuma levantada:*\n`;
-            semLevItems.forEach(item => {
-                const nome = item.querySelector('.badge-ausente')?.innerText?.replace('😴 ', '') || '';
-                text += `• ${nome}\n`;
-            });
-        }
+        text += "\n\n";
+        let posicao = 1;
+        listItems.forEach((li) => {
+            const nameEl = li.querySelector('.font-semibold');
+            const countEl = li.querySelector('.bg-orange-100, .bg-red-100');
+            if (!nameEl || !countEl) return; // pula separadores
+            const name = nameEl.innerText;
+            const count = countEl.innerText;
+            const kaBadge = li.querySelector('.bg-purple-100');
+            const kaText = kaBadge ? ` (${kaBadge.innerText.trim()})` : '';
+            const isZonaRisco = li.classList.contains('bg-red-50');
+            if (isZonaRisco) {
+                text += `🚨 ${name.replace(/^[!] /, '')} — ZONA DE RISCO\n`;
+            } else {
+                text += `${posicao}º ${name}: ${count}${kaText}\n`;
+                posicao++;
+            }
+        });
+
+
         copiarTexto(text, event.currentTarget);
     }
 
