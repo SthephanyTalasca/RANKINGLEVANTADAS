@@ -543,6 +543,14 @@
             text += `\n🎯 *Meta: ${meta} | ${pct}% atingido*`;
             if (faltam > 0) text += ` | Faltam ${faltam}`;
         }
+        const semLevItems = document.querySelectorAll('#semLevantadaList li');
+        if (semLevItems.length > 0) {
+            text += `\n\n⚠️ *Sem nenhuma levantada:*\n`;
+            semLevItems.forEach(item => {
+                const nome = item.querySelector('.badge-ausente')?.innerText?.replace('😴 ', '') || '';
+                text += `• ${nome}\n`;
+            });
+        }
         copiarTexto(text, event.currentTarget);
     }
 
