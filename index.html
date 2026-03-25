@@ -227,8 +227,8 @@
 <script>
     // ─── Lista fixa de CSs (foco no primeiro nome quando único) ──────────────
     const CS_FIXOS_RAW = [
-        "Aline Almeida", "Ana de Battisti", " Julia Rodrigues da Silva",
-         "Bianca de Souza Kim", "Brayan Silveira dos Santos", "Camille Vaz", "Carolina Miranda",
+        "Aline Almeida", "Ana de Battisti", "Julia Rodrigues da Silva",
+        "Bianca de Souza Kim", "Brayan Silveira dos Santos", "Camille Vaz", "Carolina Miranda",
         "Debora Rezende", "Denis Silva", "Isaque Silva",
         "Jéssica Barreiro", "Kelvin Larmany",
         "Larissa Mota", "Larissa Teixeira", "Lorrayne Moreira",
@@ -246,22 +246,23 @@
     // Descobre quais primeiros nomes são únicos para usar como alias de busca
     const primeiroNomeContagem = {};
     CS_FIXOS_RAW.forEach(nome => {
-        const primeiro = norm(nome.split(' ')[0]);
+        const primeiro = norm(nome.trim().split(' ')[0]);
         primeiroNomeContagem[primeiro] = (primeiroNomeContagem[primeiro] || 0) + 1;
     });
 
     // Mapa: apelido/primeiro nome normalizado → nome completo canônico
     const CS_ALIAS = {};
     CS_FIXOS_RAW.forEach(nome => {
-        CS_ALIAS[norm(nome)] = nome; // nome completo
-        const primeiro = norm(nome.split(' ')[0]);
+        const nomeClean = nome.trim();
+        CS_ALIAS[norm(nomeClean)] = nomeClean; // nome completo
+        const primeiro = norm(nomeClean.split(' ')[0]);
         if (primeiroNomeContagem[primeiro] === 1) {
-            CS_ALIAS[primeiro] = nome; // primeiro nome único
+            CS_ALIAS[primeiro] = nomeClean; // primeiro nome único
         }
     });
 
     // Nomes canônicos para exibição no autocomplete
-    const CS_FIXOS = CS_FIXOS_RAW;
+    const CS_FIXOS = CS_FIXOS_RAW.map(n => n.trim());
 
     // ─── Estado global ────────────────────────────────────────────────────────
     let keyAccounts = [];
