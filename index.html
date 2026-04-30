@@ -6,13 +6,58 @@
     <title>Ranking de Levantadas - Sucesso</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+
+        // ── CONFIGURE AQUI COM OS DADOS DO SEU PROJETO FIREBASE ──
+        const firebaseConfig = {
+            apiKey: "COLE_SUA_API_KEY",
+            authDomain: "COLE_SEU_AUTH_DOMAIN",
+            projectId: "COLE_SEU_PROJECT_ID",
+            storageBucket: "COLE_SEU_STORAGE_BUCKET",
+            messagingSenderId: "COLE_SEU_MESSAGING_SENDER_ID",
+            appId: "COLE_SEU_APP_ID"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // ── Expõe funções para o escopo global ──
+        window._fb = { db, auth, collection, onSnapshot, doc, setDoc, deleteDoc, getDocs, signInWithEmailAndPassword, signOut, onAuthStateChanged };
+
+        // ── Observa estado do auth e carrega analistas ──
+        onAuthStateChanged(auth, (user) => {
+            window._currentUser = user;
+            if (user) {
+                mostrarPainelCoord(user);
+            } else {
+                esconderPainelCoord();
+            }
+        });
+
+        // ── Escuta mudanças em tempo real na coleção de analistas ──
+        onSnapshot(collection(db, 'analistas'), (snapshot) => {
+            const lista = [];
+            snapshot.forEach(d => lista.push(d.data().nome));
+            lista.sort((a, b) => a.localeCompare(b, 'pt-BR'));
+            window.CS_FIXOS_RAW = lista;
+            window.CS_FIXOS = lista;
+            reconstruirAlias();
+            csListaAtual = [...lista];
+            renderizarListaAdmin();
+        });
+    </script>
+
     <style>
         body { font-family: 'DM Sans', sans-serif; background-color: #f8fafc; }
-
         .hubspot-orange { color: #ff7a59; }
         .bg-hubspot { background-color: #ff7a59; }
         .bg-hubspot:hover { background-color: #e56a4d; }
-
         h1 { font-family: 'Space Grotesk', sans-serif; }
 
         .card {
@@ -31,24 +76,16 @@
         }
         .animate-results { animation: fadeUp 0.35s ease-out forwards; }
 
-        /* Progress bar */
         .progress-bar-track {
-            background: #e2e8f0;
-            border-radius: 99px;
-            height: 12px;
-            overflow: hidden;
+            background: #e2e8f0; border-radius: 99px; height: 12px; overflow: hidden;
         }
         .progress-bar-fill {
-            height: 100%;
-            border-radius: 99px;
+            height: 100%; border-radius: 99px;
             transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
             background: linear-gradient(90deg, #ff7a59, #ff9f7e);
         }
-        .progress-bar-fill.complete {
-            background: linear-gradient(90deg, #10b981, #34d399);
-        }
+        .progress-bar-fill.complete { background: linear-gradient(90deg, #10b981, #34d399); }
 
-        /* Autocomplete */
         #csAutocompleteList {
             position: absolute; z-index: 50; background: white;
             border: 1px solid #e2e8f0; border-radius: 10px;
@@ -56,21 +93,59 @@
             max-height: 200px; overflow-y: auto;
             width: 100%; top: calc(100% + 4px); left: 0;
         }
-        #csAutocompleteList li {
-            padding: 9px 14px; cursor: pointer; font-size: 0.875rem; color: #334155;
+        #csAutocompleteList li { padding: 9px 14px; cursor: pointer; font-size: 0.875rem; color: #334155; }
+        #csAutocompleteList li:hover, #csAutocompleteList li.active { background-color: #fff7f5; color: #ff7a59; }
+
+        /* Painel admin */
+        #painelAdmin { display: none; }
+        #painelAdmin.ativo { display: block; }
+
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 100; padding: 1rem;
         }
-        #csAutocompleteList li:hover, #csAutocompleteList li.active {
-            background-color: #fff7f5; color: #ff7a59;
+        .modal-box {
+            background: white; border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            padding: 2rem; width: 100%; max-width: 420px;
         }
 
-        /* Badge sem-levantada */
-        .badge-ausente {
-            display: inline-flex; align-items: center; gap: 6px;
-            background: #fef2f2; color: #dc2626;
-            border: 1px solid #fecaca;
-            border-radius: 99px; padding: 4px 12px;
-            font-size: 0.78rem; font-weight: 600;
+        .analista-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 14px; border-radius: 10px;
+            background: #f8fafc; border: 1px solid #e2e8f0;
+            transition: background 0.15s;
         }
+        .analista-item:hover { background: #f1f5f9; }
+
+        .tag-coord {
+            display: inline-flex; align-items: center; gap: 5px;
+            background: #fef3c7; color: #92400e;
+            border: 1px solid #fde68a; border-radius: 99px;
+            padding: 2px 10px; font-size: 0.7rem; font-weight: 700;
+        }
+
+        .btn-login-float {
+            position: fixed; bottom: 1.5rem; right: 1.5rem;
+            background: white; border: 1px solid #e2e8f0;
+            border-radius: 99px; padding: 10px 18px;
+            font-size: 0.78rem; font-weight: 700; color: #64748b;
+            cursor: pointer; box-shadow: 0 4px 12px rgb(0 0 0 / 0.1);
+            transition: all 0.2s; z-index: 50;
+        }
+        .btn-login-float:hover { background: #f8fafc; color: #334155; }
+
+        .toast {
+            position: fixed; bottom: 5rem; right: 1.5rem;
+            background: #1e293b; color: white;
+            border-radius: 10px; padding: 10px 18px;
+            font-size: 0.82rem; font-weight: 500;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            z-index: 200; opacity: 0; transform: translateY(8px);
+            transition: all 0.3s;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -83,6 +158,39 @@
     </header>
 
     <main class="space-y-5">
+
+        <!-- ── PAINEL COORDENADOR ── -->
+        <div id="painelAdmin" class="card p-6 border-l-4 border-amber-400">
+            <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <div>
+                    <h2 class="font-bold text-slate-700 flex items-center gap-2">
+                        👑 Painel do Coordenador
+                        <span class="tag-coord">COORD</span>
+                    </h2>
+                    <p id="adminEmail" class="text-xs text-slate-400 mt-0.5"></p>
+                </div>
+                <button onclick="fazerLogout()" class="text-xs font-bold bg-slate-100 text-slate-500 px-4 py-2 rounded-lg hover:bg-slate-200 transition-all">
+                    Sair
+                </button>
+            </div>
+
+            <!-- Adicionar analista -->
+            <div class="flex gap-3 mb-4">
+                <input
+                    type="text" id="novoAnalistaInput"
+                    placeholder="Nome completo do novo analista"
+                    onkeydown="if(event.key==='Enter') adicionarAnalista()"
+                    class="flex-1 p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-300 outline-none text-sm bg-slate-50"
+                />
+                <button onclick="adicionarAnalista()" class="bg-amber-400 hover:bg-amber-500 text-white font-bold py-3 px-5 rounded-lg transition-all active:scale-95 whitespace-nowrap text-sm">
+                    + Adicionar
+                </button>
+            </div>
+
+            <!-- Lista de analistas -->
+            <div class="text-xs text-slate-400 mb-2 font-semibold uppercase tracking-wider">Analistas cadastrados</div>
+            <div id="listaAdminAnalistas" class="space-y-2 max-h-64 overflow-y-auto pr-1"></div>
+        </div>
 
         <!-- ── Meta do Mês ── -->
         <div class="card p-6 border-l-4 border-orange-400">
@@ -145,8 +253,6 @@
 
         <!-- ── Results ── -->
         <div id="resultsArea" class="hidden space-y-5 animate-results">
-
-            <!-- Cards resumo -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div class="card p-5 border-t-4 border-green-400">
                     <p class="text-slate-500 text-xs uppercase font-bold tracking-wider mb-1">Total Levantadas</p>
@@ -166,7 +272,6 @@
                 </div>
             </div>
 
-            <!-- Progresso da meta -->
             <div id="metaCard" class="card p-6 hidden">
                 <div class="flex items-center justify-between mb-3">
                     <h2 class="font-bold text-slate-700 flex items-center gap-2">🎯 Progresso da Meta</h2>
@@ -182,7 +287,6 @@
                 </div>
             </div>
 
-            <!-- Ranking -->
             <div class="card overflow-hidden">
                 <div class="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center">
                     <h2 class="font-bold text-slate-700">🏆 Ranking por CS</h2>
@@ -194,93 +298,224 @@
                 <ul id="rankingList" class="divide-y divide-slate-100 text-slate-700"></ul>
             </div>
 
-            <!-- CSs sem levantada -->
             <div id="semLevantadaCard" class="card overflow-hidden border border-yellow-100 hidden">
                 <div class="bg-yellow-50 border-b border-yellow-100 p-4 flex justify-between items-center">
                     <h2 class="font-bold text-yellow-700 flex items-center gap-2">😴 CSs sem nenhuma levantada</h2>
-                    <button onclick="copiarSemLevantada(event)" class="text-xs font-bold bg-white border border-yellow-200 px-4 py-2 rounded-lg hover:bg-yellow-50 transition-all shadow-sm text-yellow-700">
-                        Copiar Lista
-                    </button>
+                    <button onclick="copiarSemLevantada(event)" class="text-xs font-bold bg-white border border-yellow-200 px-4 py-2 rounded-lg hover:bg-yellow-50 transition-all shadow-sm text-yellow-700">Copiar Lista</button>
                 </div>
                 <div class="p-4 bg-white">
                     <ul id="semLevantadaList" class="flex flex-wrap gap-2 text-sm"></ul>
                 </div>
             </div>
 
-            <!-- Alertas sem CS -->
             <div id="alertCard" class="card overflow-hidden border border-red-100">
                 <div class="bg-red-50 border-b border-red-100 p-4 flex justify-between items-center">
                     <h2 class="font-bold text-red-700 flex items-center gap-2">⚠️ Negócios SEM CS Atribuído</h2>
-                    <button id="btnCopiarAlertas" onclick="copiarAlertas(event)" class="hidden text-xs font-bold bg-white border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50 transition-all shadow-sm text-red-700">
-                        Copiar Alertas
-                    </button>
+                    <button id="btnCopiarAlertas" onclick="copiarAlertas(event)" class="hidden text-xs font-bold bg-white border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50 transition-all shadow-sm text-red-700">Copiar Alertas</button>
                 </div>
                 <div class="p-4 bg-white">
                     <ul id="semCsList" class="space-y-1 text-sm text-red-600"></ul>
                 </div>
             </div>
-
         </div>
     </main>
 </div>
 
-<script>
-    // ─── Lista fixa de CSs (foco no primeiro nome quando único) ──────────────
-    const CS_FIXOS_RAW = [
-        "Aline Almeida", "Ana de Battisti", "Julia Rodrigues da Silva",
-        "Bianca de Souza Kim", "Brayan Silveira dos Santos", "Camille Vaz", "Carolina Miranda",
-        "Debora Rezende", "Denis Silva", "Isaque Silva",
-        "Jéssica Barreiro", "Kelvin Larmany",
-        "Larissa Mota", "Larissa Teixeira", "Lorrayne Moreira",
-        "Maria Fernanda", "Maryana Alves", "Micaelle Martins",
-        "Nataly Vieira", "Nathalia Costa", "Priscilla Quites",
-        "Rafaele Oliveira", "Sabrina Corrêa", "Sthephany Talasca",
-        "Thais Silva", "Túlio Morgado","Vinícius Oliveira", "William Martins", "Yuri Santos"
-    ];
+<!-- Botão flutuante de login -->
+<button id="btnLoginFloat" class="btn-login-float" onclick="abrirModalLogin()">🔐 Coordenador</button>
 
-    // Normaliza string: minúsculo + sem acento
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<!-- Modal de Login -->
+<div id="modalLogin" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h2 class="text-lg font-bold text-slate-800 mb-1">Acesso do Coordenador</h2>
+        <p class="text-sm text-slate-400 mb-5">Entre com suas credenciais para gerenciar a lista de analistas.</p>
+
+        <div class="space-y-3">
+            <input type="email" id="loginEmail" placeholder="seu@email.com"
+                class="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-300 outline-none text-sm bg-slate-50"
+                onkeydown="if(event.key==='Enter') fazerLogin()"
+            />
+            <input type="password" id="loginSenha" placeholder="Senha"
+                class="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-300 outline-none text-sm bg-slate-50"
+                onkeydown="if(event.key==='Enter') fazerLogin()"
+            />
+            <p id="loginErro" class="text-xs text-red-500 hidden"></p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mt-5">
+            <button onclick="fecharModalLogin()" class="bg-slate-100 text-slate-600 font-bold py-3 rounded-lg hover:bg-slate-200 transition-all">
+                Cancelar
+            </button>
+            <button onclick="fazerLogin()" class="bg-amber-400 hover:bg-amber-500 text-white font-bold py-3 rounded-lg transition-all active:scale-95">
+                Entrar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de confirmação de exclusão -->
+<div id="modalConfirm" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h2 class="text-lg font-bold text-slate-800 mb-2">Remover analista?</h2>
+        <p class="text-sm text-slate-500 mb-1">Tem certeza que deseja remover:</p>
+        <p id="confirmNome" class="font-bold text-slate-800 mb-5 text-center py-3 bg-slate-50 rounded-lg"></p>
+        <div class="grid grid-cols-2 gap-3">
+            <button onclick="fecharConfirm()" class="bg-slate-100 text-slate-600 font-bold py-3 rounded-lg hover:bg-slate-200 transition-all">
+                Cancelar
+            </button>
+            <button id="confirmBtn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-all active:scale-95">
+                Remover
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ── Estado global ──
+    let keyAccounts = [];
+    let csListaAtual = [];
+    window.CS_FIXOS_RAW = [];
+    window.CS_FIXOS = [];
+
+    // ── Helpers de normalização ──
     function norm(s) {
         return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     }
 
-    // Descobre quais primeiros nomes são únicos para usar como alias de busca
-    const primeiroNomeContagem = {};
-    CS_FIXOS_RAW.forEach(nome => {
-        const primeiro = norm(nome.trim().split(' ')[0]);
-        primeiroNomeContagem[primeiro] = (primeiroNomeContagem[primeiro] || 0) + 1;
-    });
+    function reconstruirAlias() {
+        const raw = window.CS_FIXOS_RAW || [];
+        window._primeiroNomeContagem = {};
+        raw.forEach(nome => {
+            const p = norm(nome.trim().split(' ')[0]);
+            window._primeiroNomeContagem[p] = (window._primeiroNomeContagem[p] || 0) + 1;
+        });
+        window._CS_ALIAS = {};
+        raw.forEach(nome => {
+            const c = nome.trim();
+            window._CS_ALIAS[norm(c)] = c;
+            const p = norm(c.split(' ')[0]);
+            if (window._primeiroNomeContagem[p] === 1) window._CS_ALIAS[p] = c;
+        });
+    }
 
-    // Mapa: apelido/primeiro nome normalizado → nome completo canônico
-    const CS_ALIAS = {};
-    CS_FIXOS_RAW.forEach(nome => {
-        const nomeClean = nome.trim();
-        CS_ALIAS[norm(nomeClean)] = nomeClean; // nome completo
-        const primeiro = norm(nomeClean.split(' ')[0]);
-        if (primeiroNomeContagem[primeiro] === 1) {
-            CS_ALIAS[primeiro] = nomeClean; // primeiro nome único
-        }
-    });
-
-    // Nomes canônicos para exibição no autocomplete
-    const CS_FIXOS = CS_FIXOS_RAW.map(n => n.trim());
-
-    // ─── Estado global ────────────────────────────────────────────────────────
-    let keyAccounts = [];
-    let csListaAtual = [...CS_FIXOS];
-
-    // ─── Resolve nome: tenta casar com a lista fixa ───────────────────────────
     function resolverNomeCS(nome) {
         if (!nome) return null;
         const chave = norm(nome.trim());
-        if (CS_ALIAS[chave]) return CS_ALIAS[chave];
-        // tenta match parcial (contém o primeiro nome)
-        for (const [alias, canonical] of Object.entries(CS_ALIAS)) {
-            if (chave.includes(alias) || alias.includes(chave)) return canonical;
+        const alias = window._CS_ALIAS || {};
+        if (alias[chave]) return alias[chave];
+        for (const [a, canonical] of Object.entries(alias)) {
+            if (chave.includes(a) || a.includes(chave)) return canonical;
         }
-        return nome.trim(); // fallback: usa o que veio
+        return nome.trim();
     }
 
-    // ─── Autocomplete ─────────────────────────────────────────────────────────
+    // ── Toast ──
+    function showToast(msg, dur = 2500) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), dur);
+    }
+
+    // ── Auth: Login / Logout ──
+    function abrirModalLogin() {
+        document.getElementById('modalLogin').classList.remove('hidden');
+        document.getElementById('loginEmail').focus();
+    }
+    function fecharModalLogin() {
+        document.getElementById('modalLogin').classList.add('hidden');
+        document.getElementById('loginErro').classList.add('hidden');
+    }
+
+    async function fazerLogin() {
+        const email = document.getElementById('loginEmail').value.trim();
+        const senha = document.getElementById('loginSenha').value;
+        const erroEl = document.getElementById('loginErro');
+        try {
+            await window._fb.signInWithEmailAndPassword(window._fb.auth, email, senha);
+            fecharModalLogin();
+            showToast('✅ Bem-vinda, coordenadora!');
+        } catch (e) {
+            erroEl.textContent = 'E-mail ou senha incorretos.';
+            erroEl.classList.remove('hidden');
+        }
+    }
+
+    async function fazerLogout() {
+        await window._fb.signOut(window._fb.auth);
+        showToast('👋 Logout realizado.');
+    }
+
+    function mostrarPainelCoord(user) {
+        document.getElementById('painelAdmin').classList.add('ativo');
+        document.getElementById('adminEmail').textContent = user.email;
+        document.getElementById('btnLoginFloat').classList.add('hidden');
+    }
+
+    function esconderPainelCoord() {
+        document.getElementById('painelAdmin').classList.remove('ativo');
+        document.getElementById('btnLoginFloat').classList.remove('hidden');
+    }
+
+    // ── Admin: Adicionar / Remover Analistas ──
+    async function adicionarAnalista() {
+        const input = document.getElementById('novoAnalistaInput');
+        const nome = input.value.trim();
+        if (!nome || nome.length < 2) { showToast('⚠️ Digite um nome válido.'); return; }
+
+        const { db, doc, setDoc, collection } = window._fb;
+        const id = nome.toLowerCase().replace(/\s+/g, '_').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        await setDoc(doc(collection(db, 'analistas'), id), { nome });
+        input.value = '';
+        showToast(`✅ ${nome} adicionado(a)!`);
+    }
+
+    let _nomeParaRemover = null;
+    function pedirConfirmRemocao(nome) {
+        _nomeParaRemover = nome;
+        document.getElementById('confirmNome').textContent = nome;
+        document.getElementById('modalConfirm').classList.remove('hidden');
+        document.getElementById('confirmBtn').onclick = confirmarRemocao;
+    }
+    function fecharConfirm() {
+        _nomeParaRemover = null;
+        document.getElementById('modalConfirm').classList.add('hidden');
+    }
+
+    async function confirmarRemocao() {
+        if (!_nomeParaRemover) return;
+        const { db, doc, deleteDoc, collection } = window._fb;
+        const id = _nomeParaRemover.toLowerCase().replace(/\s+/g, '_').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        await deleteDoc(doc(collection(db, 'analistas'), id));
+        showToast(`🗑️ ${_nomeParaRemover} removido(a).`);
+        fecharConfirm();
+    }
+
+    function renderizarListaAdmin() {
+        const container = document.getElementById('listaAdminAnalistas');
+        if (!container) return;
+        const lista = window.CS_FIXOS || [];
+        if (!lista.length) {
+            container.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Nenhum analista cadastrado ainda.</p>';
+            return;
+        }
+        container.innerHTML = '';
+        lista.forEach(nome => {
+            const div = document.createElement('div');
+            div.className = 'analista-item';
+            div.innerHTML = `
+                <span class="text-sm font-medium text-slate-700">${nome}</span>
+                <button onclick="pedirConfirmRemocao('${nome.replace(/'/g, "\\'")}')"
+                    class="text-slate-300 hover:text-red-400 transition-colors text-xl font-bold leading-none" title="Remover">×</button>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    // ── Autocomplete ──
     function mostrarSugestoes() {
         const input = document.getElementById('keyAccountCS');
         const lista = document.getElementById('csAutocompleteList');
@@ -323,7 +558,7 @@
             document.getElementById('csAutocompleteList').classList.add('hidden');
     });
 
-    // ─── Key Accounts ─────────────────────────────────────────────────────────
+    // ── Key Accounts ──
     function adicionarKeyAccount() {
         const quantidade = parseInt(document.getElementById('keyAccountName').value);
         const csRaw = document.getElementById('keyAccountCS').value.trim();
@@ -360,21 +595,22 @@
         });
     }
 
-    // ─── Limpar ───────────────────────────────────────────────────────────────
+    // ── Limpar ──
     function limparTudo() {
         document.getElementById('inputData').value = '';
         document.getElementById('resultsArea').classList.add('hidden');
     }
 
-    // ─── Processar ────────────────────────────────────────────────────────────
+    // ── Processar Dados ──
     function processarDados() {
         const rawText = document.getElementById('inputData').value;
         if (!rawText.trim()) return;
 
+        const CS_FIXOS = window.CS_FIXOS || [];
         const blocks = rawText.split(/Exibir contato na HubSpot|Atividade da linha de tempo/g);
 
         let totalSucesso = 0;
-        let csData = {};   // { [csName]: { count, keyAccountCount, firstIndex } }
+        let csData = {};
         let semCsList = [];
 
         blocks.forEach((block, blockIndex) => {
@@ -397,31 +633,26 @@
             if (invalido) { semCsList.push({ contactName }); return; }
 
             const csName = resolverNomeCS(csRaw);
-
             if (!csData[csName]) csData[csName] = { count: 0, keyAccountCount: 0, firstIndex: blockIndex };
             csData[csName].count++;
         });
 
-        // ── Aplica key accounts ───────────────────────────────────────────────
         keyAccounts.forEach(({ quantidade, csName }) => {
             if (!csData[csName]) csData[csName] = { count: 0, keyAccountCount: 0, firstIndex: Infinity };
             csData[csName].count += quantidade;
             csData[csName].keyAccountCount += quantidade;
         });
 
-        csListaAtual = CS_FIXOS; // sempre mostra a lista completa no autocomplete
+        csListaAtual = CS_FIXOS;
 
-        // ── Quem está na lista fixa mas não apareceu ──────────────────────────
         const csComLevantada = new Set(Object.keys(csData));
         const csSemLevantada = CS_FIXOS.filter(cs => !csComLevantada.has(cs));
 
-        // ── Ordenação ─────────────────────────────────────────────────────────
         const sortedCs = Object.entries(csData).sort((a, b) => {
             if (b[1].count !== a[1].count) return b[1].count - a[1].count;
             return a[1].firstIndex - b[1].firstIndex;
         });
 
-        // ── Totais ────────────────────────────────────────────────────────────
         const totalKA = keyAccounts.reduce((s, ka) => s + ka.quantidade, 0);
         const totalFinal = totalSucesso + totalKA;
 
@@ -430,7 +661,6 @@
         document.getElementById('totalAlertas').innerText = semCsList.length;
         document.getElementById('totalSemLevantada').innerText = csSemLevantada.length;
 
-        // ── Progresso da meta ─────────────────────────────────────────────────
         const meta = parseInt(document.getElementById('metaMes').value);
         const metaCard = document.getElementById('metaCard');
         if (meta && meta > 0) {
@@ -448,7 +678,6 @@
             metaCard.classList.add('hidden');
         }
 
-        // ── Ranking ───────────────────────────────────────────────────────────
         const rankingUl = document.getElementById('rankingList');
         rankingUl.innerHTML = '';
         if (!sortedCs.length) {
@@ -475,12 +704,9 @@
             });
         }
 
-        // ── CSs sem levantada — aparece no final do ranking ───────────────────
-        const semLevCard = document.getElementById('semLevantadaCard');
-        semLevCard.classList.add('hidden'); // card separado não é mais necessário
+        document.getElementById('semLevantadaCard').classList.add('hidden');
 
         if (csSemLevantada.length > 0) {
-            // separador zona de risco
             const sep = document.createElement('li');
             sep.className = "flex items-center justify-center px-4 py-3 bg-red-600";
             sep.innerHTML = `<span style="letter-spacing:0.18em;font-family:'Space Grotesk',sans-serif;" class="text-white text-xs font-black uppercase flex items-center gap-2">🚨 ZONA DE RISCO — SEM NENHUMA LEVANTADA 🚨</span>`;
@@ -494,15 +720,12 @@
                         <span class="w-7 h-7 flex items-center justify-center rounded-full bg-red-200 text-xs font-bold text-red-600">!</span>
                         <span class="font-semibold text-red-700">${cs}</span>
                     </div>
-                    <div class="bg-red-100 text-red-600 border border-red-200 px-3 py-1 rounded-full font-bold text-sm shrink-0">
-                        0 levantadas
-                    </div>
+                    <div class="bg-red-100 text-red-600 border border-red-200 px-3 py-1 rounded-full font-bold text-sm shrink-0">0 levantadas</div>
                 `;
                 rankingUl.appendChild(li);
             });
         }
 
-        // ── Alertas sem CS ────────────────────────────────────────────────────
         const semCsUl = document.getElementById('semCsList');
         const btnAlertas = document.getElementById('btnCopiarAlertas');
         semCsUl.innerHTML = '';
@@ -523,7 +746,7 @@
         window.scrollTo({ top: document.getElementById('resultsArea').offsetTop - 20, behavior: 'smooth' });
     }
 
-    // ─── Copiar helpers ───────────────────────────────────────────────────────
+    // ── Copiar helpers ──
     function copiarTexto(texto, botao) {
         navigator.clipboard.writeText(texto).catch(() => {
             const el = document.createElement('textarea');
@@ -557,21 +780,19 @@
         listItems.forEach((li) => {
             const nameEl = li.querySelector('.font-semibold');
             const countEl = li.querySelector('.bg-orange-100, .bg-red-100');
-            if (!nameEl || !countEl) return; // pula separadores
+            if (!nameEl || !countEl) return;
             const name = nameEl.innerText;
             const count = countEl.innerText;
             const kaBadge = li.querySelector('.bg-purple-100');
             const kaText = kaBadge ? ` (${kaBadge.innerText.trim()})` : '';
             const isZonaRisco = li.classList.contains('bg-red-50');
             if (isZonaRisco) {
-                text += `🚨 ${name.replace(/^[!] /, '')} — ZONA DE RISCO\n`;
+                text += `🚨 ${name} — ZONA DE RISCO\n`;
             } else {
                 text += `${posicao}º ${name}: ${count}${kaText}\n`;
                 posicao++;
             }
         });
-
-
         copiarTexto(text, event.currentTarget);
     }
 
@@ -579,7 +800,7 @@
         const items = document.querySelectorAll('#semLevantadaList li');
         if (!items.length) return;
         let text = "*😴 CSs SEM NENHUMA LEVANTADA*\n\n";
-        items.forEach(item => { text += `• ${item.querySelector('.badge-ausente')?.innerText?.replace('😴 ', '') || ''}\n`; });
+        items.forEach(item => { text += `• ${item.textContent?.trim() || ''}\n`; });
         copiarTexto(text, event.currentTarget);
     }
 
