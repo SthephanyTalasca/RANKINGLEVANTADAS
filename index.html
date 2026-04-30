@@ -31,23 +31,44 @@
         // ── Escuta cs_analistas (quem aparece no ranking) ──
         onSnapshot(collection(db, 'cs_analistas'), (snapshot) => {
             const lista = [];
-            snapshot.forEach(d => lista.push(d.data().nome));
+            const aliasMap = {};
+            snapshot.forEach(d => {
+                const data = d.data();
+                const nome = data.nome || data.nome_completo;
+                if (!nome) return;
+                lista.push(nome);
+                aliasMap[nome.toLowerCase()] = nome;
+                if (Array.isArray(data.alias)) {
+                    data.alias.forEach(a => { if (a && a.trim()) aliasMap[a.trim().toLowerCase()] = nome; });
+                }
+            });
             lista.sort((a, b) => a.localeCompare(b, 'pt-BR'));
             window.CS_FIXOS_RAW = lista;
             window.CS_FIXOS = lista;
+            window._CS_ALIAS_FIRE = aliasMap;
             reconstruirAlias();
             csListaAtual = [...lista];
             renderizarListaAdmin();
-            renderizarTabelaCP();
             preencherFiltroCS();
         });
 
         // ── Escuta cs_membros (membros ativos — usado pra validar CS no HubSpot) ──
         onSnapshot(collection(db, 'cs_membros'), (snapshot) => {
             const membros = [];
-            snapshot.forEach(d => membros.push(d.data().nome));
+            const aliasMapM = {};
+            snapshot.forEach(d => {
+                const data = d.data();
+                const nome = data.nome || data.nome_completo;
+                if (!nome) return;
+                membros.push(nome);
+                aliasMapM[nome.toLowerCase()] = nome;
+                if (Array.isArray(data.alias)) {
+                    data.alias.forEach(a => { if (a && a.trim()) aliasMapM[a.trim().toLowerCase()] = nome; });
+                }
+            });
             membros.sort((a, b) => a.localeCompare(b, 'pt-BR'));
             window.CS_MEMBROS = membros;
+            window._CS_MEMBROS_ALIAS_FIRE = aliasMapM;
             reconstruirAliasMembros();
         });
     </script>
@@ -385,35 +406,6 @@
     <!-- ABA ACOMPANHAMENTO -->
     <div id="aba-acompanhamento" class="tab-content">
 
-        <!-- Registrar checkpoint -->
-        <div class="card p-6 mb-5 border-l-4 border-blue-400">
-            <h2 class="font-bold text-slate-700 mb-1">📌 Registrar Checkpoint</h2>
-            <p class="text-xs text-slate-400 mb-4">Salva a situação atual de cada CS como um ponto no tempo.</p>
-            <div class="flex flex-col sm:flex-row gap-3 mb-3">
-                <select id="cpPeriodo" class="flex-1 p-3 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-300">
-                    <option value="inicio">Início do mês</option>
-                    <option value="semana1">Semana 1</option>
-                    <option value="semana2">Semana 2</option>
-                    <option value="semana3">Semana 3</option>
-                    <option value="semana4">Semana 4</option>
-                    <option value="meio">Meio do mês</option>
-                    <option value="fim">Fim do mês</option>
-                    <option value="custom">Personalizado…</option>
-                </select>
-                <input type="text" id="cpLabel" placeholder="Ex: Semana 1 — 06/mai" 
-                    class="flex-1 p-3 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-300 hidden" />
-                <input type="month" id="cpMes" 
-                    class="p-3 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-300" />
-            </div>
-
-            <!-- Tabela de entrada manual por CS -->
-            <div id="cpTabela" class="mb-4 max-h-72 overflow-y-auto space-y-2 pr-1"></div>
-
-            <button onclick="salvarCheckpoint()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-all active:scale-95 text-sm">
-                💾 Salvar Checkpoint
-            </button>
-        </div>
-
         <!-- Filtros de visualização -->
         <div class="card p-4 mb-5">
             <div class="flex flex-wrap items-center gap-2 mb-3">
@@ -480,84 +472,79 @@
     window.CS_FIXOS_RAW = [];
     window.CS_FIXOS = [];
 
+    // ── Estado de ajustes manuais para "Sem CS" ──
+    let _semCSAtribuidos = {};   // { contactName: csName }
+    let _semCSExcluidos = new Set(); // contactNames excluídos da meta
+    let _semCSList = [];         // lista atual renderizada
+
     // ── Helpers de normalização ──
     function norm(s) {
+        if (!s) return '';
         return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     }
 
-    // Distância de Levenshtein (para tolerar typos: William/Willian, Tulio/Túlio)
-    function levenshtein(a, b) {
-        if (a.length < b.length) [a,b] = [b,a];
-        let prev = [...Array(b.length+1).keys()];
-        for (let i=0; i<a.length; i++) {
-            const curr = [i+1];
-            for (let j=0; j<b.length; j++)
-                curr.push(Math.min(prev[j+1]+1, curr[j]+1, prev[j]+(a[i]!==b[j]?1:0)));
-            prev = curr;
-        }
-        return prev[b.length];
+    function _construirAliasDeRaw(raw) {
+        const contagem = {};
+        raw.forEach(nome => {
+            const p = norm(nome.trim().split(' ')[0]);
+            contagem[p] = (contagem[p] || 0) + 1;
+        });
+        const alias = {};
+        raw.forEach(nome => {
+            const c = nome.trim();
+            alias[norm(c)] = c;
+            const p = norm(c.split(' ')[0]);
+            if (contagem[p] === 1) alias[p] = c;
+        });
+        return alias;
     }
 
-    // Extrai partes relevantes de um nome (sem partículas, 3+ letras)
-    function partesNome(nome) {
-        const particulas = new Set(['de','da','do','das','dos','e','em','a','o','com','para','por','van','von','di','del','la','le']);
-        return norm(nome).split(/\s+/).filter(p => p.length >= 3 && !particulas.has(p));
+    function reconstruirAlias() {
+        window._CS_ALIAS = _construirAliasDeRaw(window.CS_FIXOS_RAW || []);
     }
 
-    // Score de similaridade entre dois nomes (0 a 1)
-    function scoreSimilaridade(nomeA, nomeB) {
-        const partesA = partesNome(nomeA);
-        const partesB = partesNome(nomeB);
-        if (!partesA.length || !partesB.length) return 0;
-        let matches = 0;
-        for (const pa of partesA) {
-            for (const pb of partesB) {
-                if (pa === pb) { matches++; break; }
-                // abreviação: "Jéssica B" → "Jéssica Barreiro"
-                if ((pa.length >= 3 && pb.startsWith(pa)) || (pb.length >= 3 && pa.startsWith(pb))) { matches++; break; }
-                // typo: William/Willian, Tulio/Túlio (Levenshtein ≤ 1 pra palavras longas)
-                if (pa.length >= 5 && pb.length >= 5 && levenshtein(pa, pb) <= 1) { matches += 0.9; break; }
-            }
-        }
-        return matches / Math.min(partesA.length, partesB.length);
+    function reconstruirAliasMembros() {
+        window._CS_MEMBROS_ALIAS = _construirAliasDeRaw(window.CS_MEMBROS || []);
     }
 
-    function _melhorMatch(chave, lista) {
-        let melhor = null, melhorScore = 0;
-        for (const nome of lista) {
-            const s = scoreSimilaridade(chave, nome);
-            if (s > melhorScore) { melhorScore = s; melhor = nome; }
-        }
-        // Exige score mínimo de 0.5 (pelo menos metade das partes batem)
-        return melhorScore >= 0.5 ? melhor : null;
-    }
-
-    function reconstruirAlias() { /* mantido por compatibilidade */ }
-    function reconstruirAliasMembros() { /* mantido por compatibilidade */ }
-
-    // Resolve nome: tenta cs_analistas primeiro, depois cs_membros
+    // Resolve nome usando cs_analistas primeiro, depois cs_membros como fallback
     function resolverNomeCS(nome) {
         if (!nome) return null;
-        const analistas = window.CS_FIXOS || [];
-        const membros   = window.CS_MEMBROS || [];
+        const chave = norm(nome.trim());
 
-        // 1. Match exato em analistas
-        const exatoA = analistas.find(cs => norm(cs) === norm(nome.trim()));
-        if (exatoA) return exatoA;
-
-        // 2. Melhor match por similaridade em analistas
-        const matchA = _melhorMatch(nome, analistas);
-        if (matchA) return matchA;
-
-        // 3. Match exato em membros
-        const exatoM = membros.find(cs => norm(cs) === norm(nome.trim()));
-        if (exatoM) return { nome: exatoM, ehMembro: true };
-
-        // 4. Melhor match por similaridade em membros
-        const matchM = _melhorMatch(nome, membros);
-        if (matchM) return { nome: matchM, ehMembro: true };
-
-        return nome.trim(); // não encontrado em nenhuma lista
+        // 1. Aliases do Firestore (cs_analistas) — exato
+        const firealias = window._CS_ALIAS_FIRE || {};
+        for (const [a, canonical] of Object.entries(firealias)) {
+            if (chave === norm(a)) return canonical;
+        }
+        // 2. Aliases do Firestore — parcial
+        for (const [a, canonical] of Object.entries(firealias)) {
+            const na = norm(a);
+            if (na.length >= 4 && (chave.includes(na) || na.includes(chave))) return canonical;
+        }
+        // 3. Alias interno
+        const alias = window._CS_ALIAS || {};
+        if (alias[chave]) return alias[chave];
+        for (const [a, canonical] of Object.entries(alias)) {
+            if (a.length >= 4 && (chave.includes(a) || a.includes(chave))) return canonical;
+        }
+        // 4. cs_membros Firestore — exato
+        const firealiasM = window._CS_MEMBROS_ALIAS_FIRE || {};
+        for (const [a, canonical] of Object.entries(firealiasM)) {
+            if (chave === norm(a)) return { nome: canonical, ehMembro: true };
+        }
+        // 5. cs_membros Firestore — parcial
+        for (const [a, canonical] of Object.entries(firealiasM)) {
+            const na = norm(a);
+            if (na.length >= 4 && (chave.includes(na) || na.includes(chave))) return { nome: canonical, ehMembro: true };
+        }
+        // 6. Alias interno membros
+        const aliasM = window._CS_MEMBROS_ALIAS || {};
+        if (aliasM[chave]) return { nome: aliasM[chave], ehMembro: true };
+        for (const [a, canonical] of Object.entries(aliasM)) {
+            if (a.length >= 4 && (chave.includes(a) || a.includes(chave))) return { nome: canonical, ehMembro: true };
+        }
+        return nome.trim();
     }
 
     // ── Toast ──
@@ -635,7 +622,7 @@
         const lista = document.getElementById('csAutocompleteList');
         const valor = input.value.trim().toLowerCase();
         if (!valor) { lista.classList.add('hidden'); return; }
-        const filtrados = csListaAtual.filter(cs => cs.toLowerCase().includes(valor));
+        const filtrados = csListaAtual.filter(cs => cs && cs.toLowerCase().includes(valor));
         if (!filtrados.length) { lista.classList.add('hidden'); return; }
         lista.innerHTML = '';
         filtrados.forEach(cs => {
@@ -732,12 +719,24 @@
             if (!trimmedBlock) return;
             if (!trimmedBlock.includes('Sucesso')) return;
 
-            totalSucesso++;
             const lines = trimmedBlock.split('\n').map(l => l.trim()).filter(l => l && l !== 'Sucesso');
 
             let contactName = lines[0];
             const indexNeg = lines.findIndex(l => l.includes('Negócio criado!'));
             if (indexNeg !== -1 && lines[indexNeg + 1]) contactName = lines[indexNeg + 1];
+
+            // Excluído da meta — não conta
+            if (_semCSExcluidos.has(contactName)) return;
+
+            totalSucesso++;
+
+            // CS atribuído manualmente
+            if (_semCSAtribuidos[contactName]) {
+                const csName = _semCSAtribuidos[contactName];
+                if (!csData[csName]) csData[csName] = { count: 0, keyAccountCount: 0, firstIndex: blockIndex };
+                csData[csName].count++;
+                return;
+            }
 
             const csRaw = lines[lines.length - 1];
             const invalidTerms = ['janeiro','fevereiro','março','abril','maio','junho',
@@ -855,23 +854,67 @@
             });
         }
 
+        _semCSList = semCsList;
         const semCsUl = document.getElementById('semCsList');
         const btnAlertas = document.getElementById('btnCopiarAlertas');
         semCsUl.innerHTML = '';
+        const totalExcluidos = _semCSExcluidos.size;
         if (semCsList.length > 0) {
             btnAlertas.classList.remove('hidden');
-            semCsList.forEach(({ contactName, motivo, csRaw }) => {
+            semCsList.forEach(({ contactName, motivo, csRaw }, idx) => {
                 const li = document.createElement('li');
-                li.className = "flex items-start gap-2 py-1";
+                li.className = "py-2 border-b border-red-50 last:border-0";
                 const badge = motivo === 'MEMBROS'
-                    ? `<span class="shrink-0 text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">⚠️ MEMBROS: ${csRaw || ''}</span>`
+                    ? `<span class="text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">⚠️ MEMBROS: ${csRaw || ''}</span>`
                     : '';
-                li.innerHTML = `<span class="opacity-40 mt-0.5">•</span> <span class="flex-1">${contactName}</span> ${badge}`;
+                const nomeEscapado = contactName.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+                const csOptions = (window.CS_FIXOS || []).map(cs => `<option value="${cs}">${cs}</option>`).join('');
+                li.innerHTML = `
+                    <div class="flex items-start gap-2">
+                        <span class="opacity-40 mt-1 shrink-0">•</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex flex-wrap items-center gap-1.5 mb-1">
+                                <span class="text-red-700 break-words">${contactName}</span>
+                                ${badge}
+                            </div>
+                            <div class="flex gap-1.5 flex-wrap">
+                                <button onclick="mostrarFormAtribuirCS(${idx})"
+                                    class="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1 rounded-full hover:bg-blue-100 transition-colors font-semibold">
+                                    ➕ Atribuir CS
+                                </button>
+                                <button onclick="excluirDaMetaItem(${idx})"
+                                    class="text-xs bg-slate-50 text-slate-400 border border-slate-200 px-2.5 py-1 rounded-full hover:bg-red-50 hover:text-red-400 hover:border-red-200 transition-colors font-semibold">
+                                    ✕ Excluir da meta
+                                </button>
+                            </div>
+                            <div id="semcsForm_${idx}" class="hidden mt-2 flex items-center gap-2 flex-wrap">
+                                <select id="semcsSelect_${idx}" class="flex-1 text-xs border border-blue-200 rounded-lg p-1.5 bg-white outline-none focus:ring-2 focus:ring-blue-300 min-w-0">
+                                    ${csOptions}
+                                </select>
+                                <button onclick="confirmarAtribuicaoCS(${idx})" class="text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg hover:bg-blue-600 font-bold whitespace-nowrap">✓ OK</button>
+                                <button onclick="document.getElementById('semcsForm_${idx}').classList.add('hidden')" class="text-xs text-slate-400 hover:text-slate-600 px-1 py-1.5">✕</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
                 semCsUl.appendChild(li);
             });
+            if (totalExcluidos > 0) {
+                const liInfo = document.createElement('li');
+                liInfo.className = "pt-2 flex items-center justify-between";
+                liInfo.innerHTML = `
+                    <span class="text-xs text-slate-400 italic">${totalExcluidos} negócio(s) excluído(s) da meta</span>
+                    <button onclick="limparAjustesSemCS()" class="text-xs text-slate-400 underline hover:text-slate-600">Desfazer tudo</button>
+                `;
+                semCsUl.appendChild(liInfo);
+            }
         } else {
             btnAlertas.classList.add('hidden');
-            semCsUl.innerHTML = '<li class="text-green-600 font-medium text-center py-4">✨ Todos os negócios possuem um CS atribuído.</li>';
+            let msg = '<li class="text-green-600 font-medium text-center py-4">✨ Todos os negócios possuem um CS atribuído.</li>';
+            if (totalExcluidos > 0) {
+                msg += `<li class="text-center pb-2"><button onclick="limparAjustesSemCS()" class="text-xs text-slate-400 underline hover:text-slate-600">Desfazer ${totalExcluidos} exclusão(ões)</button></li>`;
+            }
+            semCsUl.innerHTML = msg;
         }
 
         document.getElementById('resultsArea').classList.remove('hidden');
@@ -927,6 +970,7 @@
         });
         copiarTexto(text, event.currentTarget);
         salvarRankingFirestore(text);
+        salvarCheckpointDoRanking();
     }
 
     async function salvarRankingFirestore(texto) {
@@ -941,7 +985,8 @@
             // Monta snapshot dos dados atuais do ranking
             const itens = [];
             document.querySelectorAll('#rankingList li').forEach(li => {
-                const nome = li.querySelector('.font-semibold')?.innerText?.trim();
+                let nome = li.querySelector('.font-semibold')?.innerText?.trim() || '';
+                nome = nome.replace(/^(\u{1F947}|\u{1F948}|\u{1F949})\s*/u, '').trim();
                 const countEl = li.querySelector('.bg-orange-100');
                 const count = countEl ? parseInt(countEl.innerText) || 0 : 0;
                 if (nome && count > 0) itens.push({ nome, count });
@@ -983,6 +1028,69 @@
         text += "\n_Por favor, atribuam os CSs nestes negócios no HubSpot._";
         copiarTexto(text, event.currentTarget);
     }
+    // ── Ações da lista Sem CS ──
+    function mostrarFormAtribuirCS(idx) {
+        const form = document.getElementById('semcsForm_' + idx);
+        if (form) form.classList.toggle('hidden');
+    }
+
+    function confirmarAtribuicaoCS(idx) {
+        const select = document.getElementById('semcsSelect_' + idx);
+        const csName = select?.value;
+        if (!csName || !_semCSList[idx]) return;
+        _semCSAtribuidos[_semCSList[idx].contactName] = csName;
+        processarDados();
+    }
+
+    function excluirDaMetaItem(idx) {
+        if (!_semCSList[idx]) return;
+        _semCSExcluidos.add(_semCSList[idx].contactName);
+        delete _semCSAtribuidos[_semCSList[idx].contactName];
+        processarDados();
+    }
+
+    function limparAjustesSemCS() {
+        _semCSAtribuidos = {};
+        _semCSExcluidos = new Set();
+        processarDados();
+    }
+
+    async function salvarCheckpointDoRanking() {
+        try {
+            const { db, collection, addDoc, getDocs, query, where, deleteDoc, doc, Timestamp } = window._fb;
+            const mes = new Date().toISOString().slice(0, 7);
+            const hoje = new Date();
+            const dia = String(hoje.getDate()).padStart(2, '0');
+            const mesNome = hoje.toLocaleString('pt-BR', { month: 'short' });
+            const label = `Ranking ${dia}/${mesNome}`;
+            const dados = {};
+            document.querySelectorAll('#rankingList li').forEach(li => {
+                let nome = li.querySelector('.font-semibold')?.innerText?.trim() || '';
+                nome = nome.replace(/^(\u{1F947}|\u{1F948}|\u{1F949})\s*/u, '').trim();
+                const countEl = li.querySelector('.bg-orange-100');
+                const count = countEl ? parseInt(countEl.innerText) || 0 : 0;
+                if (nome) dados[nome] = count;
+            });
+            (window.CS_FIXOS || []).forEach(cs => { if (!(cs in dados)) dados[cs] = 0; });
+            if (!Object.keys(dados).length) return;
+            const snapMes = await getDocs(
+                query(collection(db, 'checkpoints'), where('mes', '==', mes))
+            );
+            const deletes = [];
+            snapMes.forEach(d => {
+                if (d.data().label === label) deletes.push(deleteDoc(doc(collection(db, 'checkpoints'), d.id)));
+            });
+            await Promise.all(deletes);
+            await addDoc(collection(db, 'checkpoints'), {
+                label, mes, dados, origem: 'ranking_copiado', criadoEm: Timestamp.now()
+            });
+            showToast('📌 Checkpoint salvo no Acompanhamento!', 3000);
+        } catch(e) {
+            console.warn('Erro ao salvar checkpoint automático:', e.message);
+            showToast('⚠️ Erro ao salvar checkpoint: ' + e.message, 4000);
+        }
+    }
+
     // ── Trocar aba ──
     function trocarAba(aba, btn) {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('ativa'));
@@ -996,44 +1104,8 @@
 
     // ── Periodo select toggle ──
     document.addEventListener('DOMContentLoaded', () => {
-        const sel = document.getElementById('cpPeriodo');
-        const customInput = document.getElementById('cpLabel');
-        if (sel) sel.addEventListener('change', () => {
-            if (sel.value === 'custom') customInput.classList.remove('hidden');
-            else customInput.classList.add('hidden');
-        });
-        // set default month
-        const mesInput = document.getElementById('cpMes');
-        if (mesInput) {
-            const now = new Date();
-            mesInput.value = now.toISOString().slice(0,7);
-        }
         preencherFiltroCS();
-        renderizarTabelaCP();
     });
-
-    // ── Preencher tabela de entrada do checkpoint ──
-    function renderizarTabelaCP() {
-        const tabela = document.getElementById('cpTabela');
-        if (!tabela) return;
-        const lista = window.CS_FIXOS || [];
-        if (!lista.length) {
-            tabela.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Carregue os analistas primeiro (Firebase).</p>';
-            return;
-        }
-        tabela.innerHTML = '';
-        lista.forEach(nome => {
-            const row = document.createElement('div');
-            row.className = 'flex items-center gap-3 py-1';
-            row.innerHTML = `
-                <span class="text-sm font-medium text-slate-700 flex-1 truncate">${nome}</span>
-                <input type="number" min="0" value="0" id="cp_${nome.replace(/\s+/g,'_')}"
-                    class="w-24 p-2 border border-slate-200 rounded-lg text-sm text-center bg-slate-50 outline-none focus:ring-2 focus:ring-blue-300" />
-                <span class="text-xs text-slate-400">levantadas</span>
-            `;
-            tabela.appendChild(row);
-        });
-    }
 
     // ── Preencher select de filtro CS ──
     function preencherFiltroCS() {
@@ -1046,49 +1118,6 @@
             opt.value = nome; opt.textContent = nome;
             sel.appendChild(opt);
         });
-    }
-
-    // ── Salvar checkpoint no Firestore ──
-    async function salvarCheckpoint() {
-        const { db, collection, addDoc, getDocs, query, where, deleteDoc, doc, Timestamp } = window._fb;
-        const periodoSel = document.getElementById('cpPeriodo').value;
-        const customLabel = document.getElementById('cpLabel').value.trim();
-        const mes = document.getElementById('cpMes').value;
-        const periodoLabels = {
-            inicio: 'Início do mês', semana1: 'Semana 1', semana2: 'Semana 2',
-            semana3: 'Semana 3', semana4: 'Semana 4', meio: 'Meio do mês', fim: 'Fim do mês'
-        };
-        const label = periodoSel === 'custom' ? (customLabel || 'Checkpoint') : periodoLabels[periodoSel];
-        if (!mes) { showToast('⚠️ Selecione o mês.'); return; }
-
-        const dados = {};
-        const lista = window.CS_FIXOS || [];
-        lista.forEach(nome => {
-            const inputId = 'cp_' + nome.replace(/\s+/g,'_');
-            const val = parseInt(document.getElementById(inputId)?.value || '0') || 0;
-            dados[nome] = val;
-        });
-
-        try {
-            // Se já existe checkpoint com mesmo período+mês, apaga o antigo (atualiza, não soma)
-            const existentes = await getDocs(
-                query(collection(db, 'checkpoints'), where('mes', '==', mes), where('label', '==', label))
-            );
-            const deletePromises = [];
-            existentes.forEach(d => deletePromises.push(deleteDoc(doc(collection(db, 'checkpoints'), d.id))));
-            await Promise.all(deletePromises);
-
-            await addDoc(collection(db, 'checkpoints'), {
-                label, mes, dados,
-                criadoEm: Timestamp.now()
-            });
-
-            const foi_atualizado = !existentes.empty;
-            showToast(foi_atualizado ? '🔄 Checkpoint atualizado!' : '✅ Checkpoint salvo!');
-            carregarCheckpoints();
-        } catch(e) {
-            showToast('❌ Erro ao salvar: ' + e.message);
-        }
     }
 
     // ── Carregar checkpoints do Firestore ──
