@@ -31,10 +31,23 @@
         // ── Escuta cs_analistas (quem aparece no ranking) ──
         onSnapshot(collection(db, 'cs_analistas'), (snapshot) => {
             const lista = [];
-            snapshot.forEach(d => lista.push(d.data().nome));
+            const aliasMap = {};
+            snapshot.forEach(d => {
+                const data = d.data();
+                const nome = data.nome || data.nome_completo;
+                if (!nome) return;
+                lista.push(nome);
+                aliasMap[nome.toLowerCase()] = nome;
+                if (Array.isArray(data.alias)) {
+                    data.alias.forEach(a => {
+                        if (a && a.trim()) aliasMap[a.trim().toLowerCase()] = nome;
+                    });
+                }
+            });
             lista.sort((a, b) => a.localeCompare(b, 'pt-BR'));
             window.CS_FIXOS_RAW = lista;
             window.CS_FIXOS = lista;
+            window._CS_ALIAS_FIRE = aliasMap;
             reconstruirAlias();
             csListaAtual = [...lista];
             renderizarListaAdmin();
@@ -45,9 +58,22 @@
         // ── Escuta cs_membros (membros ativos — usado pra validar CS no HubSpot) ──
         onSnapshot(collection(db, 'cs_membros'), (snapshot) => {
             const membros = [];
-            snapshot.forEach(d => membros.push(d.data().nome));
+            const aliasMapM = {};
+            snapshot.forEach(d => {
+                const data = d.data();
+                const nome = data.nome || data.nome_completo;
+                if (!nome) return;
+                membros.push(nome);
+                aliasMapM[nome.toLowerCase()] = nome;
+                if (Array.isArray(data.alias)) {
+                    data.alias.forEach(a => {
+                        if (a && a.trim()) aliasMapM[a.trim().toLowerCase()] = nome;
+                    });
+                }
+            });
             membros.sort((a, b) => a.localeCompare(b, 'pt-BR'));
             window.CS_MEMBROS = membros;
+            window._CS_MEMBROS_ALIAS_FIRE = aliasMapM;
             reconstruirAliasMembros();
         });
     </script>
@@ -482,6 +508,7 @@
 
     // ── Helpers de normalização ──
     function norm(s) {
+        if (!s) return '';
         return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     }
 
@@ -514,21 +541,42 @@
         if (!nome) return null;
         const chave = norm(nome.trim());
 
-        // Tenta cs_analistas
+        // 1. Aliases do Firestore (cs_analistas) — match exato
+        const firealias = window._CS_ALIAS_FIRE || {};
+        for (const [a, canonical] of Object.entries(firealias)) {
+            if (chave === norm(a)) return canonical;
+        }
+        // 2. Aliases do Firestore — match parcial
+        for (const [a, canonical] of Object.entries(firealias)) {
+            const na = norm(a);
+            if (na.length >= 3 && (chave.includes(na) || na.includes(chave))) return canonical;
+        }
+
+        // 3. Alias construído internamente
         const alias = window._CS_ALIAS || {};
         if (alias[chave]) return alias[chave];
         for (const [a, canonical] of Object.entries(alias)) {
-            if (chave.includes(a) || a.includes(chave)) return canonical;
+            if (a.length >= 3 && (chave.includes(a) || a.includes(chave))) return canonical;
         }
 
-        // Tenta cs_membros (membro ativo mas não analista do ranking)
+        // 4. cs_membros — aliases do Firestore
+        const firealiasM = window._CS_MEMBROS_ALIAS_FIRE || {};
+        for (const [a, canonical] of Object.entries(firealiasM)) {
+            if (chave === norm(a)) return { nome: canonical, ehMembro: true };
+        }
+        for (const [a, canonical] of Object.entries(firealiasM)) {
+            const na = norm(a);
+            if (na.length >= 3 && (chave.includes(na) || na.includes(chave))) return { nome: canonical, ehMembro: true };
+        }
+
+        // 5. Alias construído internamente de cs_membros
         const aliasM = window._CS_MEMBROS_ALIAS || {};
         if (aliasM[chave]) return { nome: aliasM[chave], ehMembro: true };
         for (const [a, canonical] of Object.entries(aliasM)) {
-            if (chave.includes(a) || a.includes(chave)) return { nome: canonical, ehMembro: true };
+            if (a.length >= 3 && (chave.includes(a) || a.includes(chave))) return { nome: canonical, ehMembro: true };
         }
 
-        return nome.trim(); // não encontrado em nenhuma lista
+        return nome.trim();
     }
 
     // ── Toast ──
@@ -606,7 +654,7 @@
         const lista = document.getElementById('csAutocompleteList');
         const valor = input.value.trim().toLowerCase();
         if (!valor) { lista.classList.add('hidden'); return; }
-        const filtrados = csListaAtual.filter(cs => cs.toLowerCase().includes(valor));
+        const filtrados = csListaAtual.filter(cs => cs && cs.toLowerCase().includes(valor));
         if (!filtrados.length) { lista.classList.add('hidden'); return; }
         lista.innerHTML = '';
         filtrados.forEach(cs => {
@@ -961,43 +1009,28 @@
         try {
             const { db, collection, addDoc, getDocs, query, where, deleteDoc, doc, Timestamp } = window._fb;
             const mes = new Date().toISOString().slice(0, 7);
-
-            // Monta label com a data de hoje
             const hoje = new Date();
             const dia = String(hoje.getDate()).padStart(2, '0');
             const mesNome = hoje.toLocaleString('pt-BR', { month: 'short' });
             const label = `Ranking ${dia}/${mesNome}`;
-
-            // Coleta dados do ranking atual
             const dados = {};
             document.querySelectorAll('#rankingList li').forEach(li => {
                 const nome = li.querySelector('.font-semibold')?.innerText?.trim();
                 const countEl = li.querySelector('.bg-orange-100');
                 const count = countEl ? parseInt(countEl.innerText) || 0 : 0;
-                if (nome && count >= 0) dados[nome] = count;
+                if (nome) dados[nome] = count;
             });
-
-            // Inclui CSs sem levantada com 0
-            (window.CS_FIXOS || []).forEach(cs => {
-                if (!(cs in dados)) dados[cs] = 0;
-            });
-
+            (window.CS_FIXOS || []).forEach(cs => { if (!(cs in dados)) dados[cs] = 0; });
             if (!Object.keys(dados).length) return;
-
-            // Remove checkpoint do mesmo dia se existir (evita duplicata)
             const existentes = await getDocs(
                 query(collection(db, 'checkpoints'), where('mes', '==', mes), where('label', '==', label))
             );
             const deletes = [];
             existentes.forEach(d => deletes.push(deleteDoc(doc(collection(db, 'checkpoints'), d.id))));
             await Promise.all(deletes);
-
             await addDoc(collection(db, 'checkpoints'), {
-                label, mes, dados,
-                origem: 'ranking_copiado',
-                criadoEm: Timestamp.now()
+                label, mes, dados, origem: 'ranking_copiado', criadoEm: Timestamp.now()
             });
-
             showToast('📌 Checkpoint salvo no Acompanhamento!', 3000);
         } catch(e) {
             console.warn('Erro ao salvar checkpoint automático:', e.message);
