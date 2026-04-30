@@ -5,28 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ranking de Levantadas - Sucesso</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
 
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, addDoc, getDocs, query, orderBy, where, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
-        // ── CONFIGURE AQUI COM OS DADOS DO SEU PROJETO FIREBASE ──
         const firebaseConfig = {
-            apiKey: "COLE_SUA_API_KEY",
-            authDomain: "COLE_SEU_AUTH_DOMAIN",
-            projectId: "COLE_SEU_PROJECT_ID",
-            storageBucket: "COLE_SEU_STORAGE_BUCKET",
-            messagingSenderId: "COLE_SEU_MESSAGING_SENDER_ID",
-            appId: "COLE_SEU_APP_ID"
+            apiKey: "AIzaSyBkC8n5mzSPZnHwXf5d-jNdZvy-esPkD8Q",
+            authDomain: "gen-lang-client-0237314662.firebaseapp.com",
+            projectId: "gen-lang-client-0237314662",
+            storageBucket: "gen-lang-client-0237314662.firebasestorage.app",
+            messagingSenderId: "279936452839",
+            appId: "1:279936452839:web:8a7e6824724c49388eba42"
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
         // ── Expõe funções para o escopo global ──
-        window._fb = { db, collection, onSnapshot, doc, setDoc, deleteDoc };
+        window._fb = { db, collection, onSnapshot, doc, setDoc, deleteDoc, addDoc, getDocs, query, orderBy, where, Timestamp };
 
         // ── Escuta mudanças em tempo real na coleção de analistas ──
         onSnapshot(collection(db, 'analistas'), (snapshot) => {
@@ -38,6 +38,8 @@
             reconstruirAlias();
             csListaAtual = [...lista];
             renderizarListaAdmin();
+            renderizarTabelaCP();
+            preencherFiltroCS();
         });
     </script>
 
@@ -114,6 +116,39 @@
         }
         .toast.show { opacity: 1; transform: translateY(0); }
 
+        /* Tabs */
+        .tab-btn { transition: all 0.2s; border-bottom: 2px solid transparent; }
+        .tab-btn.ativa { color: #ff7a59; border-bottom-color: #ff7a59; font-weight: 700; }
+        .tab-content { display: none; }
+        .tab-content.ativa { display: block; }
+
+        /* Painel acompanhamento */
+        .checkpoint-card {
+            background: white; border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            transition: box-shadow 0.2s;
+        }
+        .checkpoint-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+
+        .periodo-btn {
+            padding: 6px 14px; border-radius: 99px; font-size: 0.78rem; font-weight: 600;
+            border: 1px solid #e2e8f0; background: white; cursor: pointer;
+            transition: all 0.15s; color: #64748b;
+        }
+        .periodo-btn.ativo { background: #ff7a59; color: white; border-color: #ff7a59; }
+
+        .evolucao-row {
+            display: flex; align-items: center; gap: 12px; padding: 10px 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .evolucao-row:last-child { border-bottom: none; }
+        .evolucao-bar-bg { flex: 1; background: #f1f5f9; border-radius: 99px; height: 8px; overflow: hidden; }
+        .evolucao-bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #ff7a59, #ff9f7e); transition: width 0.6s ease; }
+        .delta-badge { font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
+        .delta-up { background: #dcfce7; color: #15803d; }
+        .delta-same { background: #f1f5f9; color: #94a3b8; }
+        .delta-down { background: #fee2e2; color: #dc2626; }
+
         #btnEngrenagem.ativo {
             background: #fef3c7;
             color: #d97706;
@@ -133,6 +168,14 @@
 <div class="max-w-4xl mx-auto">
 
     <!-- Header -->
+    <!-- Tab Navigation -->
+    <div class="flex gap-0 border-b border-slate-200 mb-6">
+        <button class="tab-btn ativa px-5 py-3 text-sm text-slate-500" onclick="trocarAba('ranking', this)">📊 Ranking</button>
+        <button class="tab-btn px-5 py-3 text-sm text-slate-500" onclick="trocarAba('acompanhamento', this)">📈 Acompanhamento</button>
+    </div>
+
+    <!-- ABA RANKING -->
+    <div id="aba-ranking" class="tab-content ativa">
     <header class="relative text-center mb-8">
         <h1 class="text-3xl font-bold hubspot-orange mb-1">📊 Leitor de Levantadas</h1>
         <p class="text-slate-500 text-sm">Equipe Sucesso · Analisador de Dados HubSpot</p>
@@ -308,16 +351,83 @@
 <!-- Toast -->
 <div id="toast" class="toast"></div>
 
-        <div class="grid grid-cols-2 gap-3 mt-5">
-            <button onclick="fecharModalLogin()" class="bg-slate-100 text-slate-600 font-bold py-3 rounded-lg hover:bg-slate-200 transition-all">
-                Cancelar
-            </button>
-            <button onclick="fazerLogin()" class="bg-amber-400 hover:bg-amber-500 text-white font-bold py-3 rounded-lg transition-all active:scale-95">
-                Entrar
+    </div><!-- /aba-ranking -->
+
+    <!-- ABA ACOMPANHAMENTO -->
+    <div id="aba-acompanhamento" class="tab-content">
+
+        <!-- Registrar checkpoint -->
+        <div class="card p-6 mb-5 border-l-4 border-blue-400">
+            <h2 class="font-bold text-slate-700 mb-1">📌 Registrar Checkpoint</h2>
+            <p class="text-xs text-slate-400 mb-4">Salva a situação atual de cada CS como um ponto no tempo.</p>
+            <div class="flex flex-col sm:flex-row gap-3 mb-3">
+                <select id="cpPeriodo" class="flex-1 p-3 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-300">
+                    <option value="inicio">Início do mês</option>
+                    <option value="semana1">Semana 1</option>
+                    <option value="semana2">Semana 2</option>
+                    <option value="semana3">Semana 3</option>
+                    <option value="semana4">Semana 4</option>
+                    <option value="meio">Meio do mês</option>
+                    <option value="fim">Fim do mês</option>
+                    <option value="custom">Personalizado…</option>
+                </select>
+                <input type="text" id="cpLabel" placeholder="Ex: Semana 1 — 06/mai" 
+                    class="flex-1 p-3 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-300 hidden" />
+                <input type="month" id="cpMes" 
+                    class="p-3 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-300" />
+            </div>
+
+            <!-- Tabela de entrada manual por CS -->
+            <div id="cpTabela" class="mb-4 max-h-72 overflow-y-auto space-y-2 pr-1"></div>
+
+            <button onclick="salvarCheckpoint()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-all active:scale-95 text-sm">
+                💾 Salvar Checkpoint
             </button>
         </div>
-    </div>
-</div>
+
+        <!-- Filtros de visualização -->
+        <div class="card p-4 mb-5">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Período:</span>
+                <button class="periodo-btn ativo" onclick="filtrarPeriodo('mes', this)">Este mês</button>
+                <button class="periodo-btn" onclick="filtrarPeriodo('3meses', this)">3 meses</button>
+                <button class="periodo-btn" onclick="filtrarPeriodo('ano', this)">Este ano</button>
+                <button class="periodo-btn" onclick="filtrarPeriodo('tudo', this)">Tudo</button>
+            </div>
+            <div class="flex gap-2 flex-wrap items-center">
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Analista:</span>
+                <select id="filtroCS" onchange="renderizarAcompanhamento()" class="p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none">
+                    <option value="">Todos</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Gráfico de evolução -->
+        <div class="card p-6 mb-5">
+            <h2 class="font-bold text-slate-700 mb-4">📈 Evolução ao longo do tempo</h2>
+            <div style="position:relative; height:280px;">
+                <canvas id="chartEvolucao"></canvas>
+            </div>
+        </div>
+
+        <!-- Checkpoints registrados -->
+        <div class="card overflow-hidden mb-5">
+            <div class="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center">
+                <h2 class="font-bold text-slate-700">🗂️ Checkpoints registrados</h2>
+                <span id="cpCount" class="text-xs text-slate-400 font-medium"></span>
+            </div>
+            <div id="cpLista" class="p-4 space-y-3"></div>
+        </div>
+
+        <!-- Comparativo por analista -->
+        <div class="card p-6">
+            <h2 class="font-bold text-slate-700 mb-4">🔄 Evolução por analista</h2>
+            <div id="evolucaoLista" class="space-y-1"></div>
+        </div>
+
+    </div><!-- /aba-acompanhamento -->
+
+</div><!-- /max-w-4xl -->
 
 <script>
     // ── Toggle painel admin ──
@@ -723,6 +833,254 @@
         text += "\n_Por favor, atribuam os CSs nestes negócios no HubSpot._";
         copiarTexto(text, event.currentTarget);
     }
+    // ── Trocar aba ──
+    function trocarAba(aba, btn) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('ativa'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('ativa'));
+        document.getElementById('aba-' + aba).classList.add('ativa');
+        btn.classList.add('ativa');
+        if (aba === 'acompanhamento') {
+            carregarCheckpoints();
+        }
+    }
+
+    // ── Periodo select toggle ──
+    document.addEventListener('DOMContentLoaded', () => {
+        const sel = document.getElementById('cpPeriodo');
+        const customInput = document.getElementById('cpLabel');
+        if (sel) sel.addEventListener('change', () => {
+            if (sel.value === 'custom') customInput.classList.remove('hidden');
+            else customInput.classList.add('hidden');
+        });
+        // set default month
+        const mesInput = document.getElementById('cpMes');
+        if (mesInput) {
+            const now = new Date();
+            mesInput.value = now.toISOString().slice(0,7);
+        }
+        preencherFiltroCS();
+        renderizarTabelaCP();
+    });
+
+    // ── Preencher tabela de entrada do checkpoint ──
+    function renderizarTabelaCP() {
+        const tabela = document.getElementById('cpTabela');
+        if (!tabela) return;
+        const lista = window.CS_FIXOS || [];
+        if (!lista.length) {
+            tabela.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Carregue os analistas primeiro (Firebase).</p>';
+            return;
+        }
+        tabela.innerHTML = '';
+        lista.forEach(nome => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center gap-3 py-1';
+            row.innerHTML = `
+                <span class="text-sm font-medium text-slate-700 flex-1 truncate">${nome}</span>
+                <input type="number" min="0" value="0" id="cp_${nome.replace(/\s+/g,'_')}"
+                    class="w-24 p-2 border border-slate-200 rounded-lg text-sm text-center bg-slate-50 outline-none focus:ring-2 focus:ring-blue-300" />
+                <span class="text-xs text-slate-400">levantadas</span>
+            `;
+            tabela.appendChild(row);
+        });
+    }
+
+    // ── Preencher select de filtro CS ──
+    function preencherFiltroCS() {
+        const sel = document.getElementById('filtroCS');
+        if (!sel) return;
+        const lista = window.CS_FIXOS || [];
+        sel.innerHTML = '<option value="">Todos</option>';
+        lista.forEach(nome => {
+            const opt = document.createElement('option');
+            opt.value = nome; opt.textContent = nome;
+            sel.appendChild(opt);
+        });
+    }
+
+    // ── Salvar checkpoint no Firestore ──
+    async function salvarCheckpoint() {
+        const { db, collection, addDoc, getDocs, query, where, deleteDoc, doc, Timestamp } = window._fb;
+        const periodoSel = document.getElementById('cpPeriodo').value;
+        const customLabel = document.getElementById('cpLabel').value.trim();
+        const mes = document.getElementById('cpMes').value;
+        const periodoLabels = {
+            inicio: 'Início do mês', semana1: 'Semana 1', semana2: 'Semana 2',
+            semana3: 'Semana 3', semana4: 'Semana 4', meio: 'Meio do mês', fim: 'Fim do mês'
+        };
+        const label = periodoSel === 'custom' ? (customLabel || 'Checkpoint') : periodoLabels[periodoSel];
+        if (!mes) { showToast('⚠️ Selecione o mês.'); return; }
+
+        const dados = {};
+        const lista = window.CS_FIXOS || [];
+        lista.forEach(nome => {
+            const inputId = 'cp_' + nome.replace(/\s+/g,'_');
+            const val = parseInt(document.getElementById(inputId)?.value || '0') || 0;
+            dados[nome] = val;
+        });
+
+        try {
+            // Se já existe checkpoint com mesmo período+mês, apaga o antigo (atualiza, não soma)
+            const existentes = await getDocs(
+                query(collection(db, 'checkpoints'), where('mes', '==', mes), where('label', '==', label))
+            );
+            const deletePromises = [];
+            existentes.forEach(d => deletePromises.push(deleteDoc(doc(collection(db, 'checkpoints'), d.id))));
+            await Promise.all(deletePromises);
+
+            await addDoc(collection(db, 'checkpoints'), {
+                label, mes, dados,
+                criadoEm: Timestamp.now()
+            });
+
+            const foi_atualizado = !existentes.empty;
+            showToast(foi_atualizado ? '🔄 Checkpoint atualizado!' : '✅ Checkpoint salvo!');
+            carregarCheckpoints();
+        } catch(e) {
+            showToast('❌ Erro ao salvar: ' + e.message);
+        }
+    }
+
+    // ── Carregar checkpoints do Firestore ──
+    let _checkpoints = [];
+    let _periodoFiltro = 'mes';
+
+    async function carregarCheckpoints() {
+        const { db, collection, getDocs, query, orderBy } = window._fb;
+        try {
+            const snap = await getDocs(query(collection(db, 'checkpoints'), orderBy('criadoEm', 'asc')));
+            _checkpoints = [];
+            snap.forEach(d => _checkpoints.push({ id: d.id, ...d.data() }));
+            renderizarAcompanhamento();
+        } catch(e) {
+            console.error('Erro ao carregar checkpoints:', e);
+        }
+    }
+
+    function filtrarPeriodo(periodo, btn) {
+        _periodoFiltro = periodo;
+        document.querySelectorAll('.periodo-btn').forEach(b => b.classList.remove('ativo'));
+        btn.classList.add('ativo');
+        renderizarAcompanhamento();
+    }
+
+    function checkpointsFiltrados() {
+        const now = new Date();
+        const mesAtual = now.toISOString().slice(0,7);
+        const anoAtual = now.getFullYear().toString();
+        return _checkpoints.filter(cp => {
+            if (_periodoFiltro === 'mes') return cp.mes === mesAtual;
+            if (_periodoFiltro === '3meses') {
+                const d = new Date(cp.mes + '-01');
+                const diff = (now.getFullYear() - d.getFullYear()) * 12 + now.getMonth() - d.getMonth();
+                return diff <= 2;
+            }
+            if (_periodoFiltro === 'ano') return cp.mes && cp.mes.startsWith(anoAtual);
+            return true;
+        });
+    }
+
+    let _chart = null;
+
+    function renderizarAcompanhamento() {
+        const cps = checkpointsFiltrados();
+        const filtroCS = document.getElementById('filtroCS')?.value || '';
+        document.getElementById('cpCount').textContent = cps.length + ' checkpoint(s)';
+
+        // ── Render checkpoint list ──
+        const cpLista = document.getElementById('cpLista');
+        if (!cps.length) {
+            cpLista.innerHTML = '<p class="text-sm text-slate-400 text-center py-6">Nenhum checkpoint neste período.</p>';
+        } else {
+            cpLista.innerHTML = '';
+            [...cps].reverse().forEach(cp => {
+                const div = document.createElement('div');
+                div.className = 'checkpoint-card p-4';
+                const total = Object.values(cp.dados || {}).reduce((s,v) => s+v, 0);
+                const dataFmt = cp.mes ? (() => {
+                    const [y,m] = cp.mes.split('-');
+                    return m + '/' + y;
+                })() : '';
+                div.innerHTML = `
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <span class="font-semibold text-slate-700 text-sm">${cp.label}</span>
+                            <span class="text-xs text-slate-400 ml-2">${dataFmt}</span>
+                        </div>
+                        <span class="text-xs bg-orange-100 text-orange-700 font-bold px-2 py-1 rounded-full">${total} levantadas</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1">
+                        ${Object.entries(cp.dados || {}).filter(([n,v]) => v > 0).sort((a,b) => b[1]-a[1]).map(([n,v]) =>
+                            `<span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">${n.split(' ')[0]}: ${v}</span>`
+                        ).join('')}
+                    </div>
+                `;
+                cpLista.appendChild(div);
+            });
+        }
+
+        // ── Render chart ──
+        const labels = cps.map(cp => cp.label);
+        const allCS = filtroCS ? [filtroCS] : (window.CS_FIXOS || []).filter(cs =>
+            cps.some(cp => (cp.dados || {})[cs] > 0)
+        ).slice(0, 8); // max 8 lines for readability
+
+        const colors = ['#ff7a59','#6366f1','#10b981','#f59e0b','#3b82f6','#ec4899','#14b8a6','#8b5cf6'];
+        const datasets = allCS.map((cs, i) => ({
+            label: cs.split(' ')[0],
+            data: cps.map(cp => (cp.dados || {})[cs] || 0),
+            borderColor: colors[i % colors.length],
+            backgroundColor: colors[i % colors.length] + '22',
+            borderWidth: 2, tension: 0.4, fill: false, pointRadius: 4,
+        }));
+
+        const ctx = document.getElementById('chartEvolucao');
+        if (_chart) _chart.destroy();
+        _chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } } },
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+                    y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: '#f1f5f9' } }
+                }
+            }
+        });
+
+        // ── Evolução por analista (primeiro vs último checkpoint) ──
+        const evolDiv = document.getElementById('evolucaoLista');
+        if (cps.length < 2) {
+            evolDiv.innerHTML = '<p class="text-sm text-slate-400 text-center py-4">Precisa de pelo menos 2 checkpoints para comparar.</p>';
+        } else {
+            const primeiro = cps[0];
+            const ultimo = cps[cps.length - 1];
+            const csParaMostrar = filtroCS ? [filtroCS] : (window.CS_FIXOS || []);
+            const maxVal = Math.max(...csParaMostrar.map(cs => (ultimo.dados || {})[cs] || 0), 1);
+
+            evolDiv.innerHTML = '';
+            csParaMostrar
+                .map(cs => ({ cs, ini: (primeiro.dados || {})[cs] || 0, fim: (ultimo.dados || {})[cs] || 0 }))
+                .sort((a,b) => b.fim - a.fim)
+                .forEach(({ cs, ini, fim }) => {
+                    const delta = fim - ini;
+                    const badgeClass = delta > 0 ? 'delta-up' : delta < 0 ? 'delta-down' : 'delta-same';
+                    const deltaText = delta > 0 ? '+' + delta : delta === 0 ? '=' : delta;
+                    const pct = Math.round((fim / maxVal) * 100);
+                    const row = document.createElement('div');
+                    row.className = 'evolucao-row';
+                    row.innerHTML = `
+                        <span class="text-sm font-medium text-slate-700 w-28 truncate shrink-0">${cs.split(' ')[0]}</span>
+                        <div class="evolucao-bar-bg"><div class="evolucao-bar-fill" style="width:${pct}%"></div></div>
+                        <span class="text-sm font-bold text-slate-700 w-8 text-right shrink-0">${fim}</span>
+                        <span class="delta-badge ${badgeClass} shrink-0">${deltaText}</span>
+                    `;
+                    evolDiv.appendChild(row);
+                });
+        }
+    }
+
 </script>
 </body>
 </html>
