@@ -537,42 +537,38 @@
         if (!nome) return null;
         const chave = norm(nome.trim());
 
-        // 1. Aliases do Firestore (cs_analistas) — match exato
+        // 1. Aliases do Firestore (cs_analistas) — exato
         const firealias = window._CS_ALIAS_FIRE || {};
         for (const [a, canonical] of Object.entries(firealias)) {
             if (chave === norm(a)) return canonical;
         }
-        // 2. Aliases do Firestore — match parcial (chave contém alias ou alias contém chave)
+        // 2. Aliases do Firestore — parcial
         for (const [a, canonical] of Object.entries(firealias)) {
             const na = norm(a);
             if (na.length >= 4 && (chave.includes(na) || na.includes(chave))) return canonical;
         }
-
-        // 3. Alias construído internamente (primeira palavra única)
+        // 3. Alias interno
         const alias = window._CS_ALIAS || {};
         if (alias[chave]) return alias[chave];
         for (const [a, canonical] of Object.entries(alias)) {
             if (a.length >= 4 && (chave.includes(a) || a.includes(chave))) return canonical;
         }
-
-        // 4. cs_membros — aliases do Firestore, match exato
+        // 4. cs_membros Firestore — exato
         const firealiasM = window._CS_MEMBROS_ALIAS_FIRE || {};
         for (const [a, canonical] of Object.entries(firealiasM)) {
             if (chave === norm(a)) return { nome: canonical, ehMembro: true };
         }
-        // 5. cs_membros — match parcial
+        // 5. cs_membros Firestore — parcial
         for (const [a, canonical] of Object.entries(firealiasM)) {
             const na = norm(a);
             if (na.length >= 4 && (chave.includes(na) || na.includes(chave))) return { nome: canonical, ehMembro: true };
         }
-
-        // 6. Alias construído internamente de cs_membros
+        // 6. Alias interno membros
         const aliasM = window._CS_MEMBROS_ALIAS || {};
         if (aliasM[chave]) return { nome: aliasM[chave], ehMembro: true };
         for (const [a, canonical] of Object.entries(aliasM)) {
             if (a.length >= 4 && (chave.includes(a) || a.includes(chave))) return { nome: canonical, ehMembro: true };
         }
-
         return nome.trim();
     }
 
@@ -958,7 +954,8 @@
             // Monta snapshot dos dados atuais do ranking
             const itens = [];
             document.querySelectorAll('#rankingList li').forEach(li => {
-                const nome = li.querySelector('.font-semibold')?.innerText?.trim();
+                let nome = li.querySelector('.font-semibold')?.innerText?.trim() || '';
+                nome = nome.replace(/^(\u{1F947}|\u{1F948}|\u{1F949})\s*/u, '').trim();
                 const countEl = li.querySelector('.bg-orange-100');
                 const count = countEl ? parseInt(countEl.innerText) || 0 : 0;
                 if (nome && count > 0) itens.push({ nome, count });
@@ -1000,7 +997,6 @@
         text += "\n_Por favor, atribuam os CSs nestes negócios no HubSpot._";
         copiarTexto(text, event.currentTarget);
     }
-    // ── Salva checkpoint automaticamente ao copiar ranking ──
     async function salvarCheckpointDoRanking() {
         try {
             const { db, collection, addDoc, getDocs, query, where, deleteDoc, doc, Timestamp } = window._fb;
@@ -1011,7 +1007,8 @@
             const label = `Ranking ${dia}/${mesNome}`;
             const dados = {};
             document.querySelectorAll('#rankingList li').forEach(li => {
-                const nome = li.querySelector('.font-semibold')?.innerText?.trim();
+                let nome = li.querySelector('.font-semibold')?.innerText?.trim() || '';
+                nome = nome.replace(/^(\u{1F947}|\u{1F948}|\u{1F949})\s*/u, '').trim();
                 const countEl = li.querySelector('.bg-orange-100');
                 const count = countEl ? parseInt(countEl.innerText) || 0 : 0;
                 if (nome) dados[nome] = count;
