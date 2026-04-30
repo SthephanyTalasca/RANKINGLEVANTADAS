@@ -10,8 +10,7 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
         // ── CONFIGURE AQUI COM OS DADOS DO SEU PROJETO FIREBASE ──
         const firebaseConfig = {
@@ -25,20 +24,9 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const auth = getAuth(app);
 
         // ── Expõe funções para o escopo global ──
-        window._fb = { db, auth, collection, onSnapshot, doc, setDoc, deleteDoc, getDocs, signInWithEmailAndPassword, signOut, onAuthStateChanged };
-
-        // ── Observa estado do auth e carrega analistas ──
-        onAuthStateChanged(auth, (user) => {
-            window._currentUser = user;
-            if (user) {
-                mostrarPainelCoord(user);
-            } else {
-                esconderPainelCoord();
-            }
-        });
+        window._fb = { db, collection, onSnapshot, doc, setDoc, deleteDoc };
 
         // ── Escuta mudanças em tempo real na coleção de analistas ──
         onSnapshot(collection(db, 'analistas'), (snapshot) => {
@@ -96,10 +84,6 @@
         #csAutocompleteList li { padding: 9px 14px; cursor: pointer; font-size: 0.875rem; color: #334155; }
         #csAutocompleteList li:hover, #csAutocompleteList li.active { background-color: #fff7f5; color: #ff7a59; }
 
-        /* Painel admin */
-        #painelAdmin { display: none; }
-        #painelAdmin.ativo { display: block; }
-
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.45);
             display: flex; align-items: center; justify-content: center;
@@ -119,25 +103,8 @@
         }
         .analista-item:hover { background: #f1f5f9; }
 
-        .tag-coord {
-            display: inline-flex; align-items: center; gap: 5px;
-            background: #fef3c7; color: #92400e;
-            border: 1px solid #fde68a; border-radius: 99px;
-            padding: 2px 10px; font-size: 0.7rem; font-weight: 700;
-        }
-
-        .btn-login-float {
-            position: fixed; bottom: 1.5rem; right: 1.5rem;
-            background: white; border: 1px solid #e2e8f0;
-            border-radius: 99px; padding: 10px 18px;
-            font-size: 0.78rem; font-weight: 700; color: #64748b;
-            cursor: pointer; box-shadow: 0 4px 12px rgb(0 0 0 / 0.1);
-            transition: all 0.2s; z-index: 50;
-        }
-        .btn-login-float:hover { background: #f8fafc; color: #334155; }
-
         .toast {
-            position: fixed; bottom: 5rem; right: 1.5rem;
+            position: fixed; bottom: 2rem; right: 1.5rem;
             background: #1e293b; color: white;
             border-radius: 10px; padding: 10px 18px;
             font-size: 0.82rem; font-weight: 500;
@@ -146,32 +113,49 @@
             transition: all 0.3s;
         }
         .toast.show { opacity: 1; transform: translateY(0); }
+
+        #btnEngrenagem.ativo {
+            background: #fef3c7;
+            color: #d97706;
+            transform: translateY(-50%) rotate(90deg);
+        }
+        
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        #painelAdmin:not(.hidden) {
+            animation: slideDown 0.3s ease-out;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
 <div class="max-w-4xl mx-auto">
 
     <!-- Header -->
-    <header class="text-center mb-8">
+    <header class="relative text-center mb-8">
         <h1 class="text-3xl font-bold hubspot-orange mb-1">📊 Leitor de Levantadas</h1>
         <p class="text-slate-500 text-sm">Equipe Sucesso · Analisador de Dados HubSpot</p>
+        <button id="btnEngrenagem" onclick="togglePainelAdmin()" title="Gerenciar Analistas"
+            class="absolute right-0 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 hover:bg-amber-100 hover:text-amber-600 text-slate-400 transition-all duration-200 hover:rotate-45"
+            style="transition: background 0.2s, color 0.2s, transform 0.35s;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/>
+                <path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/>
+                <path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+            </svg>
+        </button>
     </header>
 
     <main class="space-y-5">
 
         <!-- ── PAINEL COORDENADOR ── -->
-        <div id="painelAdmin" class="card p-6 border-l-4 border-amber-400">
-            <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-                <div>
-                    <h2 class="font-bold text-slate-700 flex items-center gap-2">
-                        👑 Painel do Coordenador
-                        <span class="tag-coord">COORD</span>
-                    </h2>
-                    <p id="adminEmail" class="text-xs text-slate-400 mt-0.5"></p>
-                </div>
-                <button onclick="fazerLogout()" class="text-xs font-bold bg-slate-100 text-slate-500 px-4 py-2 rounded-lg hover:bg-slate-200 transition-all">
-                    Sair
-                </button>
+        <div id="painelAdmin" class="card p-6 border-l-4 border-amber-400 hidden overflow-hidden" style="transition: all 0.3s;">
+            <div class="mb-4">
+                <h2 class="font-bold text-slate-700 flex items-center gap-2">
+                    👑 Gerenciar Analistas
+                </h2>
+                <p class="text-xs text-slate-400 mt-0.5">Adicione ou remova analistas da lista do ranking.</p>
             </div>
 
             <!-- Adicionar analista -->
@@ -321,29 +305,8 @@
     </main>
 </div>
 
-<!-- Botão flutuante de login -->
-<button id="btnLoginFloat" class="btn-login-float" onclick="abrirModalLogin()">🔐 Coordenador</button>
-
 <!-- Toast -->
 <div id="toast" class="toast"></div>
-
-<!-- Modal de Login -->
-<div id="modalLogin" class="modal-overlay hidden">
-    <div class="modal-box">
-        <h2 class="text-lg font-bold text-slate-800 mb-1">Acesso do Coordenador</h2>
-        <p class="text-sm text-slate-400 mb-5">Entre com suas credenciais para gerenciar a lista de analistas.</p>
-
-        <div class="space-y-3">
-            <input type="email" id="loginEmail" placeholder="seu@email.com"
-                class="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-300 outline-none text-sm bg-slate-50"
-                onkeydown="if(event.key==='Enter') fazerLogin()"
-            />
-            <input type="password" id="loginSenha" placeholder="Senha"
-                class="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-300 outline-none text-sm bg-slate-50"
-                onkeydown="if(event.key==='Enter') fazerLogin()"
-            />
-            <p id="loginErro" class="text-xs text-red-500 hidden"></p>
-        </div>
 
         <div class="grid grid-cols-2 gap-3 mt-5">
             <button onclick="fecharModalLogin()" class="bg-slate-100 text-slate-600 font-bold py-3 rounded-lg hover:bg-slate-200 transition-all">
@@ -356,24 +319,22 @@
     </div>
 </div>
 
-<!-- Modal de confirmação de exclusão -->
-<div id="modalConfirm" class="modal-overlay hidden">
-    <div class="modal-box">
-        <h2 class="text-lg font-bold text-slate-800 mb-2">Remover analista?</h2>
-        <p class="text-sm text-slate-500 mb-1">Tem certeza que deseja remover:</p>
-        <p id="confirmNome" class="font-bold text-slate-800 mb-5 text-center py-3 bg-slate-50 rounded-lg"></p>
-        <div class="grid grid-cols-2 gap-3">
-            <button onclick="fecharConfirm()" class="bg-slate-100 text-slate-600 font-bold py-3 rounded-lg hover:bg-slate-200 transition-all">
-                Cancelar
-            </button>
-            <button id="confirmBtn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-all active:scale-95">
-                Remover
-            </button>
-        </div>
-    </div>
-</div>
-
 <script>
+    // ── Toggle painel admin ──
+    function togglePainelAdmin() {
+        const painel = document.getElementById('painelAdmin');
+        const btn = document.getElementById('btnEngrenagem');
+        const aberto = !painel.classList.contains('hidden');
+        if (aberto) {
+            painel.classList.add('hidden');
+            btn.classList.remove('ativo');
+        } else {
+            painel.classList.remove('hidden');
+            btn.classList.add('ativo');
+            painel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
     // ── Estado global ──
     let keyAccounts = [];
     let csListaAtual = [];
@@ -420,47 +381,7 @@
         setTimeout(() => t.classList.remove('show'), dur);
     }
 
-    // ── Auth: Login / Logout ──
-    function abrirModalLogin() {
-        document.getElementById('modalLogin').classList.remove('hidden');
-        document.getElementById('loginEmail').focus();
-    }
-    function fecharModalLogin() {
-        document.getElementById('modalLogin').classList.add('hidden');
-        document.getElementById('loginErro').classList.add('hidden');
-    }
-
-    async function fazerLogin() {
-        const email = document.getElementById('loginEmail').value.trim();
-        const senha = document.getElementById('loginSenha').value;
-        const erroEl = document.getElementById('loginErro');
-        try {
-            await window._fb.signInWithEmailAndPassword(window._fb.auth, email, senha);
-            fecharModalLogin();
-            showToast('✅ Bem-vinda, coordenadora!');
-        } catch (e) {
-            erroEl.textContent = 'E-mail ou senha incorretos.';
-            erroEl.classList.remove('hidden');
-        }
-    }
-
-    async function fazerLogout() {
-        await window._fb.signOut(window._fb.auth);
-        showToast('👋 Logout realizado.');
-    }
-
-    function mostrarPainelCoord(user) {
-        document.getElementById('painelAdmin').classList.add('ativo');
-        document.getElementById('adminEmail').textContent = user.email;
-        document.getElementById('btnLoginFloat').classList.add('hidden');
-    }
-
-    function esconderPainelCoord() {
-        document.getElementById('painelAdmin').classList.remove('ativo');
-        document.getElementById('btnLoginFloat').classList.remove('hidden');
-    }
-
-    // ── Admin: Adicionar / Remover Analistas ──
+// ── Admin: Adicionar / Remover Analistas ──
     async function adicionarAnalista() {
         const input = document.getElementById('novoAnalistaInput');
         const nome = input.value.trim();
@@ -473,25 +394,12 @@
         showToast(`✅ ${nome} adicionado(a)!`);
     }
 
-    let _nomeParaRemover = null;
-    function pedirConfirmRemocao(nome) {
-        _nomeParaRemover = nome;
-        document.getElementById('confirmNome').textContent = nome;
-        document.getElementById('modalConfirm').classList.remove('hidden');
-        document.getElementById('confirmBtn').onclick = confirmarRemocao;
-    }
-    function fecharConfirm() {
-        _nomeParaRemover = null;
-        document.getElementById('modalConfirm').classList.add('hidden');
-    }
-
-    async function confirmarRemocao() {
-        if (!_nomeParaRemover) return;
+    async function removerAnalista(nome) {
+        if (!confirm(`Remover "${nome}" da lista?`)) return;
         const { db, doc, deleteDoc, collection } = window._fb;
-        const id = _nomeParaRemover.toLowerCase().replace(/\s+/g, '_').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const id = nome.toLowerCase().replace(/\s+/g, '_').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         await deleteDoc(doc(collection(db, 'analistas'), id));
-        showToast(`🗑️ ${_nomeParaRemover} removido(a).`);
-        fecharConfirm();
+        showToast(`🗑️ ${nome} removido(a).`);
     }
 
     function renderizarListaAdmin() {
