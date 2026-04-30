@@ -31,7 +31,10 @@
         // ── Escuta cs_analistas (quem aparece no ranking) ──
         onSnapshot(collection(db, 'cs_analistas'), (snapshot) => {
             const lista = [];
-            snapshot.forEach(d => lista.push(d.data().nome));
+            snapshot.forEach(d => {
+                const nome = d.data().nome || d.data().nome_completo;
+                if (nome) lista.push(nome);
+            });
             lista.sort((a, b) => a.localeCompare(b, 'pt-BR'));
             window.CS_FIXOS_RAW = lista;
             window.CS_FIXOS = lista;
@@ -45,7 +48,10 @@
         // ── Escuta cs_membros (membros ativos — usado pra validar CS no HubSpot) ──
         onSnapshot(collection(db, 'cs_membros'), (snapshot) => {
             const membros = [];
-            snapshot.forEach(d => membros.push(d.data().nome));
+            snapshot.forEach(d => {
+                const nome = d.data().nome || d.data().nome_completo;
+                if (nome) membros.push(nome);
+            });
             membros.sort((a, b) => a.localeCompare(b, 'pt-BR'));
             window.CS_MEMBROS = membros;
             reconstruirAliasMembros();
@@ -482,80 +488,52 @@
 
     // ── Helpers de normalização ──
     function norm(s) {
+        if (!s) return '';
         return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     }
 
-    // Distância de Levenshtein (para tolerar typos: William/Willian, Tulio/Túlio)
-    function levenshtein(a, b) {
-        if (a.length < b.length) [a,b] = [b,a];
-        let prev = [...Array(b.length+1).keys()];
-        for (let i=0; i<a.length; i++) {
-            const curr = [i+1];
-            for (let j=0; j<b.length; j++)
-                curr.push(Math.min(prev[j+1]+1, curr[j]+1, prev[j]+(a[i]!==b[j]?1:0)));
-            prev = curr;
-        }
-        return prev[b.length];
+    function _construirAliasDeRaw(raw) {
+        const contagem = {};
+        raw.forEach(nome => {
+            const p = norm(nome.trim().split(' ')[0]);
+            contagem[p] = (contagem[p] || 0) + 1;
+        });
+        const alias = {};
+        raw.forEach(nome => {
+            const c = nome.trim();
+            alias[norm(c)] = c;
+            const p = norm(c.split(' ')[0]);
+            if (contagem[p] === 1) alias[p] = c;
+        });
+        return alias;
     }
 
-    // Extrai partes relevantes de um nome (sem partículas, 3+ letras)
-    function partesNome(nome) {
-        const particulas = new Set(['de','da','do','das','dos','e','em','a','o','com','para','por','van','von','di','del','la','le']);
-        return norm(nome).split(/\s+/).filter(p => p.length >= 3 && !particulas.has(p));
+    function reconstruirAlias() {
+        window._CS_ALIAS = _construirAliasDeRaw(window.CS_FIXOS_RAW || []);
     }
 
-    // Score de similaridade entre dois nomes (0 a 1)
-    function scoreSimilaridade(nomeA, nomeB) {
-        const partesA = partesNome(nomeA);
-        const partesB = partesNome(nomeB);
-        if (!partesA.length || !partesB.length) return 0;
-        let matches = 0;
-        for (const pa of partesA) {
-            for (const pb of partesB) {
-                if (pa === pb) { matches++; break; }
-                // abreviação: "Jéssica B" → "Jéssica Barreiro"
-                if ((pa.length >= 3 && pb.startsWith(pa)) || (pb.length >= 3 && pa.startsWith(pb))) { matches++; break; }
-                // typo: William/Willian, Tulio/Túlio (Levenshtein ≤ 1 pra palavras longas)
-                if (pa.length >= 5 && pb.length >= 5 && levenshtein(pa, pb) <= 1) { matches += 0.9; break; }
-            }
-        }
-        return matches / Math.min(partesA.length, partesB.length);
+    function reconstruirAliasMembros() {
+        window._CS_MEMBROS_ALIAS = _construirAliasDeRaw(window.CS_MEMBROS || []);
     }
 
-    function _melhorMatch(chave, lista) {
-        let melhor = null, melhorScore = 0;
-        for (const nome of lista) {
-            const s = scoreSimilaridade(chave, nome);
-            if (s > melhorScore) { melhorScore = s; melhor = nome; }
-        }
-        // Exige score mínimo de 0.5 (pelo menos metade das partes batem)
-        return melhorScore >= 0.5 ? melhor : null;
-    }
-
-    function reconstruirAlias() { /* mantido por compatibilidade */ }
-    function reconstruirAliasMembros() { /* mantido por compatibilidade */ }
-
-    // Resolve nome: tenta cs_analistas primeiro, depois cs_membros
+    // Resolve nome usando cs_analistas primeiro, depois cs_membros como fallback
     function resolverNomeCS(nome) {
         if (!nome) return null;
-        const analistas = window.CS_FIXOS || [];
-        const membros   = window.CS_MEMBROS || [];
+        const chave = norm(nome.trim());
 
-        // 1. Match exato em analistas
-        const exatoA = analistas.find(cs => norm(cs) === norm(nome.trim()));
-        if (exatoA) return exatoA;
+        // Tenta cs_analistas
+        const alias = window._CS_ALIAS || {};
+        if (alias[chave]) return alias[chave];
+        for (const [a, canonical] of Object.entries(alias)) {
+            if (chave.includes(a) || a.includes(chave)) return canonical;
+        }
 
-        // 2. Melhor match por similaridade em analistas
-        const matchA = _melhorMatch(nome, analistas);
-        if (matchA) return matchA;
-
-        // 3. Match exato em membros
-        const exatoM = membros.find(cs => norm(cs) === norm(nome.trim()));
-        if (exatoM) return { nome: exatoM, ehMembro: true };
-
-        // 4. Melhor match por similaridade em membros
-        const matchM = _melhorMatch(nome, membros);
-        if (matchM) return { nome: matchM, ehMembro: true };
+        // Tenta cs_membros (membro ativo mas não analista do ranking)
+        const aliasM = window._CS_MEMBROS_ALIAS || {};
+        if (aliasM[chave]) return { nome: aliasM[chave], ehMembro: true };
+        for (const [a, canonical] of Object.entries(aliasM)) {
+            if (chave.includes(a) || a.includes(chave)) return { nome: canonical, ehMembro: true };
+        }
 
         return nome.trim(); // não encontrado em nenhuma lista
     }
@@ -635,7 +613,7 @@
         const lista = document.getElementById('csAutocompleteList');
         const valor = input.value.trim().toLowerCase();
         if (!valor) { lista.classList.add('hidden'); return; }
-        const filtrados = csListaAtual.filter(cs => cs.toLowerCase().includes(valor));
+        const filtrados = csListaAtual.filter(cs => cs && cs.toLowerCase().includes(valor));
         if (!filtrados.length) { lista.classList.add('hidden'); return; }
         lista.innerHTML = '';
         filtrados.forEach(cs => {
