@@ -28,8 +28,8 @@
         // ── Expõe funções para o escopo global ──
         window._fb = { db, collection, onSnapshot, doc, setDoc, deleteDoc, addDoc, getDocs, query, orderBy, where, Timestamp };
 
-        // ── Escuta mudanças em tempo real na coleção de analistas ──
-        onSnapshot(collection(db, 'analistas'), (snapshot) => {
+        // ── Escuta cs_analistas (quem aparece no ranking) ──
+        onSnapshot(collection(db, 'cs_analistas'), (snapshot) => {
             const lista = [];
             snapshot.forEach(d => lista.push(d.data().nome));
             lista.sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -40,6 +40,15 @@
             renderizarListaAdmin();
             renderizarTabelaCP();
             preencherFiltroCS();
+        });
+
+        // ── Escuta cs_membros (membros ativos — usado pra validar CS no HubSpot) ──
+        onSnapshot(collection(db, 'cs_membros'), (snapshot) => {
+            const membros = [];
+            snapshot.forEach(d => membros.push(d.data().nome));
+            membros.sort((a, b) => a.localeCompare(b, 'pt-BR'));
+            window.CS_MEMBROS = membros;
+            reconstruirAliasMembros();
         });
     </script>
 
@@ -196,16 +205,27 @@
         <div id="painelAdmin" class="card p-6 border-l-4 border-amber-400 hidden overflow-hidden" style="transition: all 0.3s;">
             <div class="mb-4">
                 <h2 class="font-bold text-slate-700 flex items-center gap-2">
-                    👑 Gerenciar Analistas
+                    👑 Gerenciar Equipe
                 </h2>
-                <p class="text-xs text-slate-400 mt-0.5">Adicione ou remova analistas da lista do ranking.</p>
+                <p class="text-xs text-slate-400 mt-0.5">Gerencie analistas do ranking e membros ativos da equipe.</p>
+            </div>
+            <!-- Tabs internas do painel -->
+            <div class="flex gap-1 mb-4 bg-slate-100 p-1 rounded-lg w-fit">
+                <button id="tabAdminAnalistas" onclick="trocarTabAdmin('analistas')"
+                    class="px-4 py-1.5 rounded-md text-xs font-bold bg-white text-slate-700 shadow-sm transition-all">
+                    📊 cs_analistas
+                </button>
+                <button id="tabAdminMembros" onclick="trocarTabAdmin('membros')"
+                    class="px-4 py-1.5 rounded-md text-xs font-bold text-slate-400 transition-all">
+                    👥 cs_membros
+                </button>
             </div>
 
-            <!-- Adicionar analista -->
+            <!-- Adicionar -->
             <div class="flex gap-3 mb-4">
                 <input
                     type="text" id="novoAnalistaInput"
-                    placeholder="Nome completo do novo analista"
+                    placeholder="Nome completo"
                     onkeydown="if(event.key==='Enter') adicionarAnalista()"
                     class="flex-1 p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-300 outline-none text-sm bg-slate-50"
                 />
@@ -214,8 +234,8 @@
                 </button>
             </div>
 
-            <!-- Lista de analistas -->
-            <div class="text-xs text-slate-400 mb-2 font-semibold uppercase tracking-wider">Analistas cadastrados</div>
+            <!-- Lista -->
+            <div id="labelColecaoAtual" class="text-xs text-slate-400 mb-2 font-semibold uppercase tracking-wider">cs_analistas</div>
             <div id="listaAdminAnalistas" class="space-y-2 max-h-64 overflow-y-auto pr-1"></div>
         </div>
 
@@ -465,31 +485,50 @@
         return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     }
 
-    function reconstruirAlias() {
-        const raw = window.CS_FIXOS_RAW || [];
-        window._primeiroNomeContagem = {};
+    function _construirAliasDeRaw(raw) {
+        const contagem = {};
         raw.forEach(nome => {
             const p = norm(nome.trim().split(' ')[0]);
-            window._primeiroNomeContagem[p] = (window._primeiroNomeContagem[p] || 0) + 1;
+            contagem[p] = (contagem[p] || 0) + 1;
         });
-        window._CS_ALIAS = {};
+        const alias = {};
         raw.forEach(nome => {
             const c = nome.trim();
-            window._CS_ALIAS[norm(c)] = c;
+            alias[norm(c)] = c;
             const p = norm(c.split(' ')[0]);
-            if (window._primeiroNomeContagem[p] === 1) window._CS_ALIAS[p] = c;
+            if (contagem[p] === 1) alias[p] = c;
         });
+        return alias;
     }
 
+    function reconstruirAlias() {
+        window._CS_ALIAS = _construirAliasDeRaw(window.CS_FIXOS_RAW || []);
+    }
+
+    function reconstruirAliasMembros() {
+        window._CS_MEMBROS_ALIAS = _construirAliasDeRaw(window.CS_MEMBROS || []);
+    }
+
+    // Resolve nome usando cs_analistas primeiro, depois cs_membros como fallback
     function resolverNomeCS(nome) {
         if (!nome) return null;
         const chave = norm(nome.trim());
+
+        // Tenta cs_analistas
         const alias = window._CS_ALIAS || {};
         if (alias[chave]) return alias[chave];
         for (const [a, canonical] of Object.entries(alias)) {
             if (chave.includes(a) || a.includes(chave)) return canonical;
         }
-        return nome.trim();
+
+        // Tenta cs_membros (membro ativo mas não analista do ranking)
+        const aliasM = window._CS_MEMBROS_ALIAS || {};
+        if (aliasM[chave]) return { nome: aliasM[chave], ehMembro: true };
+        for (const [a, canonical] of Object.entries(aliasM)) {
+            if (chave.includes(a) || a.includes(chave)) return { nome: canonical, ehMembro: true };
+        }
+
+        return nome.trim(); // não encontrado em nenhuma lista
     }
 
     // ── Toast ──
@@ -501,6 +540,25 @@
     }
 
 // ── Admin: Adicionar / Remover Analistas ──
+    let _adminColecaoAtual = 'cs_analistas';
+
+    function trocarTabAdmin(aba) {
+        _adminColecaoAtual = aba === 'analistas' ? 'cs_analistas' : 'cs_membros';
+        document.getElementById('labelColecaoAtual').textContent = _adminColecaoAtual;
+
+        const btnA = document.getElementById('tabAdminAnalistas');
+        const btnM = document.getElementById('tabAdminMembros');
+        if (aba === 'analistas') {
+            btnA.className = 'px-4 py-1.5 rounded-md text-xs font-bold bg-white text-slate-700 shadow-sm transition-all';
+            btnM.className = 'px-4 py-1.5 rounded-md text-xs font-bold text-slate-400 transition-all';
+            renderizarListaAdmin();
+        } else {
+            btnM.className = 'px-4 py-1.5 rounded-md text-xs font-bold bg-white text-slate-700 shadow-sm transition-all';
+            btnA.className = 'px-4 py-1.5 rounded-md text-xs font-bold text-slate-400 transition-all';
+            renderizarListaMembros();
+        }
+    }
+
     async function adicionarAnalista() {
         const input = document.getElementById('novoAnalistaInput');
         const nome = input.value.trim();
@@ -508,16 +566,16 @@
 
         const { db, doc, setDoc, collection } = window._fb;
         const id = nome.toLowerCase().replace(/\s+/g, '_').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        await setDoc(doc(collection(db, 'analistas'), id), { nome });
+        await setDoc(doc(collection(db, _adminColecaoAtual), id), { nome });
         input.value = '';
-        showToast(`✅ ${nome} adicionado(a)!`);
+        showToast(`✅ ${nome} adicionado(a) em ${_adminColecaoAtual}!`);
     }
 
-    async function removerAnalista(nome) {
-        if (!confirm(`Remover "${nome}" da lista?`)) return;
+    async function removerAnalista(nome, colecao) {
+        if (!confirm(`Remover "${nome}" de ${colecao}?`)) return;
         const { db, doc, deleteDoc, collection } = window._fb;
         const id = nome.toLowerCase().replace(/\s+/g, '_').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        await deleteDoc(doc(collection(db, 'analistas'), id));
+        await deleteDoc(doc(collection(db, colecao), id));
         showToast(`🗑️ ${nome} removido(a).`);
     }
 
@@ -659,13 +717,22 @@
 
             if (invalido) { semCsList.push({ contactName }); return; }
 
-            const csName = resolverNomeCS(csRaw);
-            // Se o nome resolvido não está na lista do Firebase, notifica como sem CS — MEMBROS
+            const resolvido = resolverNomeCS(csRaw);
+
+            // É membro ativo mas não está em cs_analistas
+            if (resolvido && typeof resolvido === 'object' && resolvido.ehMembro) {
+                semCsList.push({ contactName, motivo: 'MEMBROS', csRaw: resolvido.nome });
+                return;
+            }
+
+            // Não encontrado em nenhuma lista
+            const csName = typeof resolvido === 'string' ? resolvido : csRaw;
             const estaNoFirebase = (window.CS_FIXOS || []).some(cs => cs === csName);
             if (!estaNoFirebase) {
                 semCsList.push({ contactName, motivo: 'MEMBROS', csRaw });
                 return;
             }
+
             if (!csData[csName]) csData[csName] = { count: 0, keyAccountCount: 0, firstIndex: blockIndex };
             csData[csName].count++;
         });
